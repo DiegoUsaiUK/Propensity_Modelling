@@ -1,0 +1,798 @@
+---
+title: "Using h2o and DALEX to Estimate the Likelihood of Purchasing a Financial Product"
+subtitle:  "Propensity Modelling - Part 2 of 3: Estimate Several Models and Compare Their Performance Using a Model-agnostic Methodology"
+author: "Diego Usai"
+date: "17 February 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  eval       = TRUE,   # TRUE to evaluate every single chunck
+  warning    = FALSE,  # FALSE to suppress warnings from being shown
+  message    = FALSE,  # FALSE to avoid package loading messages
+  cache      = TRUE,  # TRUE to save every single chunck to a folder
+  echo       = TRUE,   # TRUE to display code in output document
+  out.width  = "80%",
+  out.height = "80%",
+  fig.align  = "center"
+)
+```
+
+```{r switch off locale, include=FALSE}
+# turn off locale-specific sorting to get output messages in English
+Sys.setlocale("LC_TIME", "C")
+```
+
+```{r libraries}
+library(tidyverse)
+library(skimr)
+library(h2o)
+library(DALEX)
+library(knitr)
+library(tictoc)
+```
+
+
+# Introduction
+
+In this day and age, a business that leverages data to understand the drivers of its customers' behaviour has a true competitive advantage. Organisations can dramatically improve their performance in the market by analysing customer level data in an effective way and focus their efforts towards those that are more likely to engage. 
+
+One trialled and tested approach to tease out this type of insight is [__Propensity Modelling__](https://en.wikipedia.org/wiki/Predictive_modelling), which combines information such as a __customers’ demographics__ (age, race, religion, gender, family size, ethnicity, income, education level), __psycho-graphic__ (social class, lifestyle and personality characteristics), __engagement__ (emails opened, emails clicked, searches on mobile app, webpage dwell time, etc.), __user experience__ (customer service phone and email wait times, number of refunds, average shipping times), and __user behaviour__ (purchase value on different time-scales, number of days since most recent purchase, time between offer and conversion, etc.) to estimate the likelihood of a certain customer profile to performing a certain type of behaviour (e.g. the purchase of a product).
+
+Once you understand the probability of a certain customer to interact with your brand, buy a product or a sign up for a service, you can use this information to create scenarios, be it minimising __marketing expenditure__, maximising __acquisition targets__, and optimise __email send frequency__ or __depth of discount__.
+
+
+## Project Structure
+
+In this project I'm analysing the results of a bank __direct marketing campaign__ to sell term deposits in order to identify what type of customer is more likely to respond. The marketing campaigns were based on phone calls and more than one contact to the same client was required at times. 
+
+First, I am going to carry out an __extensive data exploration__ and use the results and insights to prepare the data for analysis.
+
+Then, I'm __estimating a number of models__ and assess their performance and fit to the data using a __model-agnostic methodology__ that enables to __compare traditional "glass-box" models and "black-box" models__.
+
+Last, I'll fit __one final model__ that combines findings from the exploratory analysis and insight from models' selection and use it to __run a revenue optimisation__.
+
+
+## Modelling strategy
+
+In any analytics study, there are several steps I would normally take to ensure an effective modelling strategy: 
+
+- I would __fit several models__, compare their performance and pick the most suitable one for the “So what?” analysis
+
+- I would implement __grid search__ to fine tune parameters for all models and improve their predictive performance
+
+- In case of class imbalance, I would test __different resampling techniques__, compare their output and use the one that best suits the data structure and the analysis goals
+
+
+In order to keep project running time reasonable, I made a number of choices. 
+
+1 - First of all, I've opted for __h2o__ as my modelling platform as it offers a number of advantages: 
+
+- it very easy to use and you can __estimate several Machine Learning models__ in no time
+
+- it does __not require to pre-treat character/factor variables by “binarising” them__ (this is done "internally"), which further reduces data formatting time
+
+- it has a functionality that __takes care of the class imbalance__ highlighted in the Data Exploration phase - I simply set `balance_classes` = TRUE in the model specification, more on this later on
+
+- I can enable __cross-validation__ to be carried out without the need for a separate `validation frame` to be "carved out" of the training set 
+
+One aspect I __did not manage to cover__ in this project was __parameters fine tuning__ (a.k.a. grid search). This is mostly due to the limitations of my current laptop, which lacks adequate computing power: even enabling the built-in __h2o__ parallel processing had my machine freeze and crash several times. I will explore more computational hungry tasks when I'll eventually upgrade to a more powerful computer.  
+
+
+### Creating the training and validation sets 
+
+Before I begin, I load the cleansed data saved at the end of the exploratory analysis 
+```{r}
+# Loading clensed data
+data_final <- readRDS(file = "../01_data/data_final.rds")
+```
+
+I'm starting by creating a randomised training and validation set with `rsample`
+```{r}
+set.seed(seed = 1975) 
+
+train_test_split <-
+  rsample::initial_split(
+    data = data_final,     
+    prop = 0.80   
+  ) 
+
+train_test_split
+```
+
+Of the 41,188 total customers, 32,951 have been assigned to the training set and 8,237 to the test set. I save them as `train_tbl` and `test_tbl`.
+```{r}
+train_tbl <- train_test_split %>% rsample::training() 
+test_tbl  <- train_test_split %>% rsample::testing() 
+```
+
+
+### Building models with h2o
+
+The next step is to start a __h2o cluster__. I specify the size of the memory cluster to “16G” to help speed things up a bit and turn off the progress bar.
+```{r}
+# initialize h2o session and switch off progress bar
+h2o.no_progress() 
+h2o.init(max_mem_size = "16G")
+```
+
+Next, I sort out response and predictor variables sets. For a classification to be performed, I need to __ensure that the response variable is a factor__ (otherwise h2o will carry out a regression). This was sorted out during the data clensing and formatting phase.
+```{r}
+# response variable
+y <- "subscribed"
+
+# predictors set: remove response variable
+x <- setdiff(names(train_tbl %>% as.h2o()), y)
+```
+
+
+### Fitting the models
+
+It's now time to fit some models: for this project I'm estimating a __Generalised Linear Model__ (a.k.a. Elastic Net), a __Random Forest__ (which h2o refers to at _Distributed Random Forest_) and a __Gradient Boosting Machine__ (or GBM). Note that all of these models have 2 parameters in common: 
+
+* the `nfolds` parameter, which enables __cross-validation__ to be carried out without the need for a validation_frame - if set to 5 for instance, it will perform a 5-fold cross-validation
+
+* the `balance_classes` parameter is set to _TRUE_ to account for the imbalance in the target variable highlighted during the exploratory analysis. When enabled, h2o will either under-sample the majority class or oversample the minority class.
+
+For the `tree-based` models (DRF and GBM) I’m also using some _control parameters_ to manage the models' estimation running time:
+
+* Setting `stopping_metric` to AUC as the error metric for early stopping - the models will stop building new trees when the metric ceases to improve
+
+* With `stopping_rounds` I’m specifying the number of training rounds before early stopping is considered
+
+* I’m using `stopping_tolerance` to set minimal improvement needed for the training process to continue
+
+```{r, eval=FALSE}
+# elastic net model 
+glm_model <- h2o.glm(
+  x               = x, 
+  y               = y, 
+  training_frame  = train_tbl %>% as.h2o(),
+  balance_classes = TRUE,
+  nfolds          = 5,
+  family          = "binomial",
+  seed            = 1975
+  )
+
+# random forest model
+drf_model <- h2o.randomForest(
+  x                  = x, 
+  y                  = y,
+  training_frame     = train_tbl %>% as.h2o(),
+  balance_classes    = TRUE,
+  nfolds             = 5,
+  ntrees             = 500,
+  stopping_metric    = "AUC",    
+  stopping_rounds    = 5,
+  stopping_tolerance = 0.005,
+  seed               = 1975
+  )
+
+# gradient boosting machine model
+gbm_model <-  h2o.gbm(
+  x                  = x, 
+  y                  = y,
+  training_frame     = train_tbl %>% as.h2o(),
+  balance_classes    = TRUE,
+  nfolds             = 5,
+  ntrees             = 500,
+  stopping_metric    = "AUC",    
+  stopping_rounds    = 5,
+  stopping_tolerance = 0.005,
+  seed               = 1975
+  )
+```
+
+__ALWAYS REMEMBER__ that __h2o__ requires a live connection to their servers to operate properly. For that reason it is important that you __save away all models you estimate in your current live connection__ so that they can be accessed at any time. 
+
+This is especially important in the even of momentary loss of web connection, which I figured out to my expense. In case connection is lost and you have to restart the __h2o cluster__, models that are still in the RStudio environment but estimated in the previous session are NOT recognised as part of the current cluster and need to be re-estimated. This could be a little annoying, especially when you fit complex models that require extensive running time to converge.
+
+```{r, eval=FALSE, include=TRUE}
+# set path to get around model path being different from project path
+path = "../03_models/"
+
+# Save GLM model
+h2o.saveModel(glm_model, path)
+
+# Save RF model
+h2o.saveModel(drf_model, path)
+
+# Save GBM model
+h2o.saveModel(gbm_model, path)
+```
+
+```{r, load previously estimated h2o models, eval=TRUE, include=FALSE} 
+glm_model <- h2o.loadModel(path = "../03_models/GLM_model_R_1587120349395_1")
+
+drf_model <- h2o.loadModel(path = "../03_models/DRF_model_R_1587120349395_19")
+
+gbm_model <- h2o.loadModel(path = "../03_models/GBM_model_R_1587120349395_248")
+```
+
+
+## Performance assessment
+
+There are many libraries (like _IML_, _PDP_, _VIP_, and _DALEX_ to name but the more popular) that help with __Machine Learning Interpretability__, __feature explanation__ and __general performance assessment__ and they all have gained in popularity in recent years. 
+
+There are many methodologies to interpret machine learning results (i.e. _local interpretable model-agnostic explanations_, _partial dependence plots_, _permutation-based variable importance_) but in this project I examine the `DALEX` package, which focuses on __Model-Agnostic Interpretability__ and provides a convenient way to comparing performance across multiple models with different structures. 
+
+One of the key __advantages__ of the model-agnostic approach is that you can compare contributions of traditional "glass-box" models as well as black-box models on the same scale. However, being permutation-based, one of its main __drawbacks__ is that it do not deal well with large number of predictor variables and larger datasets.   
+
+
+### The DALEX procedure
+
+Currently `DALEX` does not support some of the more recent ML packages like __h2o__ or __xgboost__. To make it compatible with such objects, I've followed the procedure illustrated by __Bradley Boehmke__ in his brilliant study [__Model Interpretability with DALEX__](https://uc-r.github.io/dalex), from which I've drawn lots of inspiration and borrowed some code. 
+
+First, the dataset needs to be in a specific format:
+```{r}
+# convert feature variables to a data frame - tibble is also a data frame 
+x_valid <- test_tbl %>% select(-subscribed) %>% as_tibble()
+
+# change response variable to a numeric binary vector
+y_valid <- as.vector(as.numeric(as.character(test_tbl$subscribed)))
+```
+
+Then, I create a predict function returning a vector of numeric values, which extracts the probability of the response for binary classification problems.
+```{r}
+# create custom predict function
+pred <- function(model, newdata)  {
+  results <- as.data.frame(h2o.predict(model, newdata %>% as.h2o()))
+  return(results[[3L]])
+  }
+```
+
+Now I can convert my machine learning models into DALEK "explainers" with the `explain()` function, which works as a "container" for the parameters.
+```{r, eval=T, include=F}
+# generalised linear model explainer
+explainer_glm <- explain(
+  model            = glm_model, 
+  type             = "classification",
+  data             = x_valid,
+  y                = y_valid,
+  predict_function = pred,
+  label            = "h2o_glm"
+  )
+
+# random forest model explainer
+explainer_drf <- explain(
+  model            = drf_model, 
+  type             = "classification",
+  data             = x_valid,
+  y                = y_valid,
+  predict_function = pred,
+  label            = "h2o_drf"
+  )
+
+# gradient boosting machine explainer
+explainer_gbm <- explain(
+  model            = gbm_model, 
+  type             = "classification",
+  data             = x_valid,
+  y                = y_valid,
+  predict_function = pred,
+  label            = "h2o_gbm"
+  )
+```
+
+```{r, eval=FALSE, include=TRUE}
+# generalised linear model explainer
+explainer_glm <- explain(
+  model            = glm_model, 
+  type             = "classification",
+  data             = x_valid,
+  y                = y_valid,
+  predict_function = pred,
+  label            = "h2o_glm"
+  )
+
+# random forest model explainer
+explainer_drf <- explain(
+  model            = drf_model, 
+  type             = "classification",
+  data             = x_valid,
+  y                = y_valid,
+  predict_function = pred,
+  label            = "h2o_drf"
+  )
+
+# gradient boosting machine explainer
+explainer_gbm <- explain(
+  model            = gbm_model, 
+  type             = "classification",
+  data             = x_valid,
+  y                = y_valid,
+  predict_function = pred,
+  label            = "h2o_gbm"
+  )
+```
+
+At last, I'm ready to pass the __explainer objects__ to several DALEX functions that will help assess and compare the performance of the different models.
+
+## Assessing the models 
+
+Given that performance measures may reflect a different aspect of the predictive performance of a model, it is important to evaluate and compare several metrics when appraising a model.
+
+To evaluate and compare my models' performance, I've drawn inspiration from the framework used by Przemyslaw Biecek and Tomasz Burzykowski in their book, [__Explanatory Model Analysis__](https://pbiecek.github.io/ema/introduction.html), which is structured around key questions:
+
+* 1 - Are the models well fitted?
+
+* 2 - How do the models compare with one another?
+
+* 3 - Which variables are important in the models?
+
+* 4 - How does a single variable affect the average prediction?
+
+
+
+### __1 - Are the models well fitted?__
+
+#### General Model Fit
+
+To get an initial feel for how well my models fit the data, I can use the self-explanatory `model_performance()` function, which calculates selected model performance measures.
+
+```{r}
+model_performance(explainer_glm)
+model_performance(explainer_drf)
+model_performance(explainer_gbm)
+```
+
+Based on the metrics available for all models ( __accuracy__ and __AUC__), I can see that __elastic net__ and __gradient boosting__ are performing roughly in par with one another, with __random forest__ not far behind. AUC ranges between .78-.80 whereas accuracy has a slightly narrower range of .89-.90
+
+
+#### Residual diagnostics
+
+As shown in the previous paragraph, `model_performance()` also produces residual quantiles that can be plotted to compare absolute residual values across models.
+
+```{r}
+# compute and assign residuals to an object
+resids_glm <- model_performance(explainer_glm)
+resids_drf <- model_performance(explainer_drf)
+resids_gbm <- model_performance(explainer_gbm)
+
+# compare residuals plots
+p1 <- plot(resids_glm, resids_drf, resids_gbm) +
+        theme_minimal() +
+        theme(legend.position = 'bottom',
+              plot.title = element_text(hjust = 0.5)) + 
+        labs(y = '')
+p2 <- plot(resids_glm, resids_drf, resids_gbm, geom = "boxplot") +
+        theme_minimal() +
+        theme(legend.position = 'bottom',
+              plot.title = element_text(hjust = 0.5)) 
+
+gridExtra::grid.arrange(p2, p1, nrow = 1)
+```
+
+In spite of achieving the second highest AUC score, the random forest model appears to perform better when considering the median absolute residuals. Looking at the distribution of the residuals on the right-hand side, you can see that the median residuals are lowest for the random forest model. This is also mirrored by the boxplots on the left-hand side, where the random forest also has the lowest median absolute residual value.
+
+
+### __2 - How do the models compare with one another?__
+
+#### ROC and AUC
+
+The __Receiver Operating Characteristic (ROC)__ curve is a graphical method that allows to visualise a classification model performance against a random guess, which is represented by the striped line on the graph. The curve plots the true positive rate (TPR) on the y-axis against the false positive rate (FPR) on the x-axis. 
+
+```{r}
+eva_glm <- DALEX::model_performance(explainer_glm)
+eva_dfr <- DALEX::model_performance(explainer_drf)
+eva_gbm <- DALEX::model_performance(explainer_gbm)
+
+plot(eva_glm, eva_dfr, eva_gbm, geom = "roc") +
+  ggtitle("ROC Curves - All Models",  
+          "AUC_glm = 0.750    AUC_drf = 0.785   AUC_gbm = 0.794") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The insight that can be gathered from a ROC curve is two-fold: 
+
+* I can see that my model is performing much better than a random guess
+
+* From this I can also calculate the [__AUC (Area Under the Curve)__](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve), which summarises the ROC curve and can be used to compare models performance - the perfect classifier would have AUC = 1. 
+
+All models performs much better that random guessing and achieves a AUC of .75-.79, with the GBM achieving the highest score of 0.794.
+
+
+### __3 - Which variables are important in the models?__
+
+#### Variable importance plots
+
+Each ML algorithm has its own way to assess the importance of each variable: linear models for instance refer to their coefficients, whereas tree-based models look at impurity, which makes it difficult to compare variable importance across models. 
+
+DALEX calculates variable importance measures via permutation, which is model agnostics, allowing for direct comparison between models of different structure. However, we should bear in mind that with variable importance scores based on permutations, calculations slow down when the number of features increases. 
+
+Once again, I'm passing the "explainer" for each single model to the `feature_importance()` function and setting `n_sample` to 8000 to use practically all observations available. Although not exorbitant, the total execution time was __nearly 20 minute__ but this is based on a relatively small dataset. Always bear in mind that computation speed can be increased by reducing `n_sample`, which is especially important for larger datasets.
+
+```{r, cache=TRUE, eval=TRUE}
+# measure execution time
+tictoc::tic()
+
+# compute permutation-based variable importance
+vip_glm <- feature_importance(explainer_glm, n_sample = 8000,
+                               loss_function = loss_root_mean_square) 
+
+vip_drf <- feature_importance(explainer_drf, n_sample = 8000, 
+                               loss_function = loss_root_mean_square)
+
+vip_gbm <- feature_importance(explainer_gbm, n_sample = 8000, 
+                               loss_function = loss_root_mean_square)
+
+# show total execution time
+tictoc::toc()
+```
+
+Now I only have to feed the __vip__ objects to a plotting function: as suggested by the auto-generated x-axis label ( __Drop-out loss__), the main intuition behind how variable importance is calculated lies in how much the model fit would decreases if the contribution of a selected explanatory variable was removed. The larger the segment, the larger the loss when that variable is dropped from the model.
+
+```{r, cache=TRUE, eval=TRUE, include=T}
+# plotting top 10 feature only for clarity of reading
+plot(vip_glm, vip_drf, vip_gbm, max_vars = 10) +
+  ggtitle("Permutation variable importance", 
+          "Average variable importance based on 8,000 permutations") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+I like this plot as it brings together a wealth of information.
+
+First of all you can notice that, although with slightly different relative weights, the top 5 features are common to each models, with `nr_employed` ( __employed in the economy__) being the single most important predictor in all of them. This consistency is reassuring as it tells us that all models are picking up the same structure and interactions in the data, and gives us assurance that these features have strong predictive power.
+
+You can also notice the __distinct starting point__ for the x-axis left edge, which picks up on the difference in the RMSE loss between the three models: in this case the __elastic net__ model has the highest RMSE, suggesting the greater number of tail residuals seen earlier in the residual diagnostics is probably penalising the RMSE score.
+
+
+### __4 - How does a single variable affect the average prediction?__
+
+#### Partial Dependence profiles
+
+After we have identified the relative predictive power of each variable, we may want to investigate how their relationship with the predicted response differ across all three models. __Partial Dependency (PD) plots__, sometimes also referred to as PD profiles, offer a great way to inspect how each model is responding to a particular predictor. 
+
+We can start with having a look at the single most important feature, `nr_employed`:
+```{r, eval=T}
+# compute PDP for a given variable
+pdp_glm  <- model_profile(explainer_glm, variable = "nr_employed", type = "partial")
+pdp_drf  <- model_profile(explainer_drf, variable = "nr_employed", type = "partial")
+pdp_gbm  <- model_profile(explainer_gbm, variable = "nr_employed", type = "partial")
+
+plot(pdp_glm$agr_profiles, pdp_drf$agr_profiles, pdp_gbm$agr_profiles) +
+  ggtitle("Contrastive Partial Dependence Profiles", "") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Although with different average prediction weights, all three models found that bank customers are more likely to sigh up to a term deposit when the level of __employed in the economy__ is up to 5.099m (`nInf_5099.1`). Both __elastic net__ and __random forest__ have found the exact same hierarchy of predictive power among the 3 different levels of `nr_employed` (much subtler to spot for __random forest__ but it's there) that we observed in the `correlationfunnel` analysis, with __GBM__ being the one slightly out of kilter.
+
+Let's now take a look at `age`, a predictor that, if you recall from the EDA, was NOT expected to have an impact on the target variable: 
+
+```{r, eval=T}
+# compute PDP for a given variable
+pdp_glm  <- model_profile(explainer_glm, variable = "age", type = "partial")
+pdp_drf  <- model_profile(explainer_drf, variable = "age", type = "partial")
+pdp_gbm  <- model_profile(explainer_gbm, variable = "age", type = "partial")
+
+plot(pdp_glm$agr_profiles, pdp_drf$agr_profiles, pdp_gbm$agr_profiles) +
+  ggtitle("Contrastive Partial Dependence Profiles", "") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+One thing we notice is that the range of variation in the average prediction (x-axis) is relatively shallow across the age spectrum (y-axis), confirming the finding from the exploratory analysis that this variable would have a low predictive power. Also, both __GBM__ and __random forest__ are using `age` in a non-linear way, whereas the __elastic net__ model is unable to capture this non-linear dynamic.
+
+Partial Dependency plots could also work as a diagnostic tool: looking at `poutcome` (outcome of the `previous` marketing campaign) reveals that __GBM__ and __random forest__ correctly picked up on a higher probability of signing up when the outcome of a previous campaign was `scs` (success). 
+
+```{r, eval=T}
+# compute PDP for a given variable
+pdp_glm  <- model_profile(explainer_glm, variable = "poutcome", type = "partial")
+pdp_drf  <- model_profile(explainer_drf, variable = "poutcome", type = "partial")
+pdp_gbm  <- model_profile(explainer_gbm, variable = "poutcome", type = "partial")
+
+plot(pdp_glm$agr_profiles, pdp_drf$agr_profiles, pdp_gbm$agr_profiles) +
+  ggtitle("Contrastive Partial Dependence Profiles", "") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+However, the __elastic net__ model fails to do the same, which could represents a serious flaw as success in a previous campaign had a very strong positive correlation with the target variable. 
+
+I'm going to finish with the `month` feature as it offers a great example of one of those cases where you may want to override the model's outcome with industry knowledge and some common sense. Specifically, the __GBM__ model seems to suggest that October and December are periods associated with much better odds of success.
+
+```{r, eval=T}
+# compute PDP for a given variable
+pdp_glm  <- model_profile(explainer_glm, variable = "month", type = "partial")
+pdp_drf  <- model_profile(explainer_drf, variable = "month", type = "partial")
+pdp_gbm  <- model_profile(explainer_gbm, variable = "month", type = "partial")
+
+plot(pdp_glm$agr_profiles, pdp_drf$agr_profiles, pdp_gbm$agr_profiles) +
+  ggtitle("Contrastive Partial Dependence Profiles", "") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Based on my previous analysis experience of similar financial products, I would not advise a bank to ramp up their direct marketing activity around the weeks in the run to Christmas as this is a period of the year where consumers focus shifts away from this type of purchases.  
+
+
+### Final model
+
+All in all __random forest__ is my final model of choice: it appears the more balanced of the three and does not display some of the "oddities" seen with variables like `month` and `poutcome`. 
+
+I can now further refine my model and reduce its complexity by combining findings from the Exploratory analysis, insight from models' assessment and a number of industry-specific/common sense considerations.
+
+In particular, my __final model__:
+
+- Excludes a number of features (`age`, `housing`, `loan`, `campaign`, `cons_price_idx`) that have low predictive power
+
+- Removes `previous`, which shows little difference between its 2 levels in the PD plot - it's also moderately correlated with `pdays`, suggesting that they may capturing the same behaviour
+
+- Also drops `emp_var_rate` because of its strong correlation with `nr_employed` and also because conceptually they are controlling for a very similar economic behaviour
+
+```{r}
+# response variable 
+y <- "subscribed"
+
+# predictors set: remove response variable and 7 predictors
+x_final <- setdiff(names(train_tbl %>% 
+                           select(-c(age, housing, loan, campaign, previous,
+                                     cons_price_idx, emp_var_rate)) %>% 
+                           as.h2o()), y)
+```
+
+For the final model, I'm using the same specification as to the original random forest
+```{r, eval=FALSE}
+# random forest model
+drf_final <- h2o.randomForest(
+  x                  = x_final, 
+  y                  = y,
+  training_frame     = train_tbl %>% as.h2o(),
+  balance_classes    = TRUE,
+  nfolds             = 5,
+  ntrees             = 500,
+  stopping_metric    = "AUC",    
+  stopping_rounds    = 5,
+  stopping_tolerance = 0.005
+  |
+  )
+```
+
+Always remember to save your models!
+```{r, eval=FALSE, include=TRUE}
+# set path to get around model path being different from project path
+path = "../03_models/"
+
+# Save Final RF model
+h2o.saveModel(drf_final, path)
+```
+
+```{r, load previously estimated final drf model, eval=TRUE, include=FALSE} 
+drf_final <- h2o.loadModel(path = "../03_models/DRF_model_R_1587207745751_1")
+```
+
+
+#### Final model evaluation
+
+For brevity, I am visualising the variable importance plot with the `vip()` function from the namesake package, which returns the ranked contribution of each variable.
+
+```{r}
+vip::vip(drf_final, num_features = 12) +
+  ggtitle("Variable Importance", "") + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5))
+```
+
+
+Removing `emp_var_rate` has allowed `education` to come into the top 10 features. Understandably, the variables hierarchy and relative predictive power has adjusted and changed slightly but it's reassuring to see that the other 9 variables were in the previous model's top 10. 
+
+Lastly, I'm comparing the model’s performance with the original __random forest__ model.
+```{r}
+drf_final %>% h2o.performance(newdata = test_tbl %>% as.h2o()) %>% h2o.auc()
+
+drf_model %>% h2o.performance(newdata = test_tbl %>% as.h2o()) %>% h2o.auc()
+```
+
+The __AUC__ has only changed by a fraction of a percent, telling me that the model has maintained its predictive power.
+
+
+### A important remark on Partial Dependency Plots
+
+Being already familiar with odds ratios in the context of a logistic regression, I set out to understand whether the same intuition could be extended to black-box classification models. 
+
+During my research I've come across, among others, this very interesting post on [__Cross Validated__](https://stats.stackexchange.com/) that draws a parallel between [__odds ratio from decision tree and random forest__](https://stats.stackexchange.com/questions/93202/odds-ratio-from-decision-tree-and-random-forest).  
+
+Basically, this means that partial dependency plots can be used in a similar way to how odds ratios to define what characteristics of a customer profile influence his/her propensity to performing a certain type of behaviour. 
+
+For example, features like `job`, `month` and `contact` would provide context around __who__, __when__ and __how__ to target:
+
+* Looking at `job` will tell us that a customer in an _admin_ role is 25% more likely to subscribe that a _self employed_.
+
+* Contacting a prospective customer in the `month` of _October_ offers on average almost double the chance of a positive outcome than in _September_. 
+
+* `contacting` your customer on their _mobile_ will nearly double the chances of subscription than a _telephone_ call.
+
+- _NOTE THAT Partial Dependency Plots for all final model's predictors can be found in the __Appendix___
+
+Armed with such insight, one can help __shaping overall communication plans__ by focusing marketing activities towards customers more likely to subscribe to a term deposit.
+
+However, these are based on model-level explainers, which reflect an overall, aggregated view. If you're interested to understand how a model yields a prediction for a single observation (i.e. what factors influence the likelihood to engage __at single customer level__), you can resort to the [__Local Interpretable Model-agnostic Explanations (LIME)__](https://www.oreilly.com/content/introduction-to-local-interpretable-model-agnostic-explanations-lime/) method that exploits the concept of a "local model". I will be exploring the LIME methodology in a future post. 
+
+
+### Summary of model estimation and assessment
+
+For the analysis part of this project I opted for __h2o__ as my modelling platform. h2o is not only very easy to use but also has a number of built-in functionalities that help speeding up data preparation: it takes care of __class imbalance__ with no need for pre-modelling resampling, automatically __“binarises“ character/factor__ variables, and implements __cross-validation__ without the need for a separate `validation frame` to be "carved out" of the training set.
+
+After estimating a number of models ( a _logistic regression_, a _random forest_ and a _gradient boosting machines_), I have used the __DALEX__ library to __assessed and compared their performance__ through an array of metrics. This library employs a __model-agnostic approach__ that enables to __compare traditional "glass-box" models and "black-box" models__ on the same scale. 
+
+My final model of choice is the __random forest__, which I further refined by combining findings from the exploratory analysis, insight gathered from the models' evaluation and a number of industry-specific/common sense considerations. This ensured a reduced model complexity without compromising on predictive power.
+
+
+## Closing thoughts
+
+In the past decade __machine learning__ has gained prominence across many analytics fields and has become a stable presence in the data scientist's toolkit. Along with it, the field of __Machine Learning Interpretability__ has gathered momentum and witnessed the flourishing of many libraries (like _IML_, _PDP_, _VIP_, and _DALEX_ to name but the more popular) that help with __feature explanation__ and __general performance assessment__. 
+
+I this project I've explored in particular the __DALEX__ package, which focuses on __Model-Agnostic Interpretability__ and provides a convenient way of comparing performance across multiple models with different structures.
+
+One of its key __advantages__ is the ability to compare contributions of traditional "glass-box" models as well as black-box models on the same scale. However, being permutation-based, one of its main __drawbacks__ is that it does not scale well to large number of predictor variables and larger datasets. 
+
+Depending on the scale of your dataset and number of explanatory variables you want/need to include in your model, you should carefully consider whether to make DALEX your __ML Interpretability__ library of choice.
+
+
+### Code Repository
+The full R code and all relevant files can be found on my GitHub profile @ [__Propensity Modelling__](https://github.com/DiegoUsaiUK/Propensity_Modelling)  
+
+
+### References
+
+* To Speed Up Exploratory Data Analysis see: [__correlationfunnel Package Vignette__](https://business-science.github.io/correlationfunnel/) 
+
+* For a technically rigorous but applied take on Machine Learning Interpretability see Bradley Boehmke's [__Model Interpretability with DALEX__](https://uc-r.github.io/dalex)
+
+* For the original paper that used the data set see: [__A Data-Driven Approach to Predict the Success of Bank Telemarketing. Decision Support Systems__](http://repositorium.sdum.uminho.pt/bitstream/1822/30994/1/dss-v3.pdf), S. Moro, P. Cortez and P. Rita. 
+
+* For a in-depth look at tools and techniques to examine fully-trained machine-learning models as a whole, and compare their performance in a model-agnostic framework see: [__Explanatory Model Analysis__](https://pbiecek.github.io/ema/introduction.html), P. Biecek, T. Burzykowski
+
+* For an advanced tutorial on sales forecasting and product backorders optimisation see: [__Predictive Sales Analytics: Use Machine Learning to Predict and Optimize Product Backorders__](https://www.business-science.io/business/2017/10/16/sales_backorder_prediction.html)
+
+
+## Appendix
+
+
+### Final Model PD Profiles
+
+Update DALEX explainer inputs for the final model 
+```{r}
+# convert feature variables to a data frame
+x_final <- test_tbl %>% select(-c(subscribed,age, housing, loan, campaign,
+                                     previous, cons_price_idx, emp_var_rate)) %>% as_tibble()
+
+# change response variable to a numeric binary vector
+y_final <- as.vector(as.numeric(as.character(test_tbl$subscribed)))
+```
+
+
+Create an explainer for the final model
+```{r, eval=T, include=F}
+# final random forest model explainer
+explainer_final <- explain(
+  model            = drf_final, 
+  type             = "classification",
+  data             = x_final,
+  y                = y_final,
+  predict_function = pred,
+  label            = "h2o_drf"
+  )
+```
+
+```{r, eval=FALSE, include=TRUE}
+# final random forest model explainer
+explainer_final <- explain(
+  model            = drf_final, 
+  type             = "classification",
+  data             = x_final,
+  y                = y_final,
+  predict_function = pred,
+  label            = "h2o_drf"
+  )
+```
+
+Compute PD Plots for all final model's features
+```{r, eval=T}
+# compute PDP for a given variable
+model_profile(explainer_final, variable = "nr_employed", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "euribor3m", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "month", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "job", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "pdays", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "cons_conf_idx", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "education", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "day_of_week", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "poutcome", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "contact", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "marital", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, eval=T}
+model_profile(explainer_final, variable = "default", type = "partial") %>% 
+  plot() + 
+  theme_minimal() +
+  theme(plot.title    = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+
+One final thing: don’t forget to shut-down the h2o instance when you’re done!
+
+```{r, eval=TRUE}
+h2o.shutdown(prompt = FALSE)
+```
+
