@@ -11,7 +11,7 @@ knitr::opts_chunk$set(
   eval       = TRUE,   # TRUE to evaluate every single chunck
   warning    = FALSE,  # FALSE to suppress warnings from being shown
   message    = FALSE,  # FALSE to avoid package loading messages
-  cache      = FALSE,  # TRUE to save every single chunck to a folder
+  cache      = TRUE,  # TRUE to save every single chunck to a folder
   echo       = TRUE,   # TRUE to display code in output document
   out.width  = "80%",
   out.height = "80%",
@@ -300,10 +300,9 @@ data_clean %>%
             nudge_y = -2000,
             size = 4.5) +
   theme_minimal() +
-  theme(legend.position = 'none') +
-  labs(
-        title = 'Target Variable',
-        subtitle = 'Subscribed shows a strong class imbalance',
+  theme(legend.position = 'none',
+        plot.title    = element_text(hjust = 0.5)) +
+  labs(title = 'Target Variable',
         x = 'Subscribed', 
         y = 'Number of Responses')
 ```
@@ -427,7 +426,7 @@ __contact__ and __month__ should impact the response variable as they both have 
 In contrast, __day_of_week__ does not appear to impact the response as there is not enough variation between the levels.
 
 Last but not least, the social and economic attributes:
-```{r, social/economic context attributes}
+```{r, social-economic context attributes}
 data_clean %>% 
    select(subscribed, emp_var_rate, cons_price_idx, 
           cons_conf_idx, euribor3m, nr_employed) %>% 
