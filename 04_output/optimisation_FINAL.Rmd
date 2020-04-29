@@ -1,0 +1,387 @@
+---
+title: "Using h2o and DALEX to Estimate Likelihood to Purchase a Financial Product"
+subtitle:  "Propensity Modelling - Part 3 of 3: Optimise Profit With the Expected Value Framework"
+author: "Diego Usai"
+date: "20 April 2020"
+output:
+  html_document:
+    theme: spacelab
+    # df_print: paged
+    highlight: pygments
+    number_sections: false
+    toc: true
+    toc_float: true
+    toc_depth : 4
+    font-family: Roboto
+    code_folding: none
+    keep_md: false
+    dpi: 300
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  eval       = TRUE,   # TRUE to evaluate every single chunck
+  warning    = FALSE,  # FALSE to suppress warnings from being shown
+  message    = FALSE,  # FALSE to avoid package loading messages
+  cache      = TRUE,   # TRUE to save every single chunck to a folder
+  echo       = TRUE,   # TRUE to display code in output document
+  out.width  = "100%",
+  out.height = "100%",
+  fig.align  = "center"
+)
+```
+
+```{r switch off locale, include=FALSE}
+# turn off locale-specific sorting to get output messages in English
+Sys.setlocale("LC_TIME", "C")
+```
+
+```{r libraries}
+library(tidyverse)
+library(skimr)
+library(h2o)
+library(knitr)
+library(tictoc)
+```
+
+## Introduction
+
+In this day and age, a business that leverages data to understand the drivers of its customers' behaviour has a true competitive advantage. Organisations can dramatically improve their performance in the market by analysing customer level data in an effective way and focus their efforts towards those that are more likely to engage. 
+
+One trialled and tested approach to tease out this type of insight is [__Propensity Modelling__](https://en.wikipedia.org/wiki/Predictive_modelling), which combines information such as a __customers’ demographics__ (age, race, religion, gender, family size, ethnicity, income, education level), __psycho-graphic__ (social class, lifestyle and personality characteristics), __engagement__ (emails opened, emails clicked, searches on mobile app, webpage dwell time, etc.), __user experience__ (customer service phone and email wait times, number of refunds, average shipping times), and __user behaviour__ (purchase value on different time-scales, number of days since most recent purchase, time between offer and conversion, etc.) to estimate the likelihood of a certain customer profile to performing a certain type of behaviour (e.g. the purchase of a product).
+
+Once you understand the probability of a certain customer to interact with your brand, buy a product or a sign up for a service, you can use this information to create scenarios, be it minimising __marketing expenditure__, maximising __acquisition targets__, and optimise __email send frequency__ or __depth of discount__.
+
+
+## Project Structure
+
+In this project I'm analysing the results of a bank __direct marketing campaign__ to sell term deposits in order to identify what type of customer is more likely to respond. The marketing campaigns were based on phone calls and more than one contact to the same client was required at times. 
+
+First, I am going to carry out an __extensive data exploration__ and use the results and insights to prepare the data for analysis.
+
+Then, I'm __estimating a number of models__ and assess their performance and fit to the data using a __model-agnostic methodology__ that enables to __compare traditional "glass-box" models and "black-box" models__.
+
+Last, I'll fit __one final model__ that combines findings from the exploratory analysis and insight from models' selection and use it to __run a basic profit optimisation__.
+
+
+## Optimising for expected profit
+
+Now that I have my final model, the last piece of the puzzle is the final “So what?” question that puts all into perspective. The estimate for the probability of a customer to sign up for a term deposit can be used to create a number of optimised scenarios, ranging from minimising your __marketing expenditure__, maximising your __overall acquisitions__, to driving a certain number of __cross-sell opportunities__.
+
+Before I can do that, there are a couple of __housekeeping tasks__  needed to "set up the work scene" and a couple of important concepts to introduce:
+
+- the threshold and the F1 score 
+
+- precision and recall
+
+
+### A few housekeeping tasks
+
+I load the clensed data saved at the end of the exploratory analysis 
+```{r}
+# Loading clensed data
+data_final <- readRDS(file = "../01_data/data_final.rds")
+```
+
+From that, I create a randomised training and validation set with `rsample` and save them as `train_tbl` and `test_tbl`.
+```{r}
+set.seed(seed = 1975) 
+
+train_test_split <-
+  rsample::initial_split(
+    data = data_final,     
+    prop = 0.80   
+  ) 
+
+train_tbl <- train_test_split %>% rsample::training() 
+test_tbl  <- train_test_split %>% rsample::testing() 
+```
+
+I also need to start a __h2o cluster__, turn off the progress bar and load the final random forest model
+```{r}
+# initialize h2o session and switch off progress bar
+h2o.no_progress() 
+h2o.init(max_mem_size = "16G")
+
+drf_final <- h2o.loadModel(path = "../03_models/drf_grid_final_model_1")
+```
+
+
+### The threshold and the F1 score 
+
+The question the model is trying to answer is " _Has this customer signed up for a term deposit following a direct marketing campaign?_ " and the cut-off (a.k.a. the threshold) is the value that divides the predictions into `Yes` and  `No`.
+
+To illustrate the point, I first calculate some predictions by passing the `test_tbl` data set to the `h2o.performance` function.
+
+```{r}
+perf_drf_final <- h2o.performance(drf_final, newdata = test_tbl %>% as.h2o()) 
+
+perf_drf_final@metrics$max_criteria_and_metric_scores
+```
+
+Like many other machine learning modelling platforms, __h2o__ uses the threshold value associated with the maximum [F1 score](https://en.wikipedia.org/wiki/F1_score), which is nothing but a weighted average between precision and recall. In this case the threshold @ Max F1 is __0.190__.  
+
+Now, I use the `h2o.predict` function to make predictions using the test set. The prediction output comes with three columns: the actual model predictions (`predict`), and the probabilities associated with that prediction (`p0`, and `p1`, corresponding to `No` and `Yes` respectively). As you can see, the `p1` probability associated with the current cut-off is around __0.0646__.
+ 
+```{r}
+drf_predict <- h2o.predict(drf_final, newdata = test_tbl %>% as.h2o())
+
+# I converte to a tibble for ease of use
+as_tibble(drf_predict) %>%
+  arrange(p0) %>% 
+  slice(3088:3093) %>%
+  kable()
+```
+
+
+However, the _F1 score_ is only one way to identify the cut-off. Depending on our goal, we could also decide to use a threshold that, for instance, maximises precision or recall. In a commercial setting, the pre-selected threshold @ Max F1 may not necessarily be the optimal choice: enter __Precision and Recall__!
+
+
+### Precision and Recall
+
+__Precision__ shows how sensitive models are to False Positives (i.e. predicting a customer is _subscribing_ when he-she is actually NOT) whereas __Recall__ looks at how sensitive models are to False Negatives (i.e. forecasting that a customer is _NOT subscribing_ whilst he-she is in fact going to do so).
+
+These metrics are __very relevant in a business context__ because organisations are particularly interested in accurately predicting which customers are truly likely to `subscribe` __(high precision)__ so that they can target them with advertising strategies and other incentives. At the same time they want to minimise efforts towards customers incorrectly classified as `subscribing` __(high recall)__ who are instead unlikely to sign up. 
+
+However, as you can see from the chart below, when precision gets higher, recall gets lower and vice versa. This is often referred to as the __Precision-Recall tradeoff__.
+
+```{r}
+perf_drf_final %>%
+    h2o.metric() %>%
+    as_tibble() %>%
+    ggplot(aes(x = threshold)) +
+    geom_line(aes(y = precision), colour = "darkblue", size = 1) +
+    geom_line(aes(y = recall), colour = "red", size = 1) +
+    geom_vline(xintercept = h2o.find_threshold_by_max_metric(perf_drf_final, "f1")) +
+    theme_minimal() +
+    labs(title = 'Precision and Recall with Cut-off @ Max F1',
+         subtitle = 'Distributed Random Forest Model',
+         x = 'With threshold @ Max F1, probability above 0.0646 predicts subscribed = "Yes"',
+         y = 'Precision and Recall Values'
+         ) +
+    theme(plot.title = element_text(hjust = 0.4),
+          plot.subtitle = element_text(hjust = 0.4)) +
+  
+  # p < 0.0646
+    annotate("text", x = 0.065, y = 0.50, size = 3, colour = "darkgreen",
+             label = 'p1 < 0.0646 "No"\nNot Subscribed') +
+    
+  # p=0.0646
+    geom_vline(xintercept = 0.190, size = 0.8, colour = "orange") +
+    annotate("text", x = 0.19, y = 0.80, size = 3, colour = "darkblue",
+             label = 'p1 = 0.0646 \nCurrent Cut-off \n@ Max F1') +
+    
+  # p> 0.0646
+    annotate("text", x = 0.5, y = 0.50, size = 3, colour = "purple",
+             label = 'p1 > 0.0646 "Yes"\n Subscribed') 
+```
+
+To fully comprehend this dynamic and its implications, let's start with taking a look at the __cut-off zero__ and __cut-off one__ points and then see what happens when you start moving the threshold between the two positions: 
+
+- At __threshold zero__ ( _lowest precision, highest recall_) the model classifies every customer as `subscribed = Yes`. In such scenario, you would __contact every single customers__ with direct marketing activity but waste precious resourses by also including those less likely to subcsribe. Clearly this is not an optimal strategy as you'd incur in a higher overall acquisition cost.
+
+- Conversely, at __threshold one__ ( _highest precision, lowest recall_) the model tells you that nobody is likely to subscribe so you should __contact no one__. This would save you tons of money in marketing cost but you'd be missing out on the additional revenue from those customers who would've subscribed, had they been notified about the term deposit through direct marketing. Once again, not an optimal strategy.
+
+With this in mind, when moving to a higher threshold the model becomes more "choosy" on who it classifies as `subscribed = Yes`. As a consequence, you become more conservative on who to contact ( __higher precision__) and reduce your acquisition cost, but at the same time you increase your chance of not reaching prospective subscribes ( __lower recall__), missing out on potential revenue.
+
+The key question here is __where do you stop?__ Is there a "sweet spot" and if so, how do you find it? Well, that will depend entirely on the goal you want to achieve. In the next section I'll be running a mini-optimisation with the goal to __maximise profit__.
+
+
+## Finding the optimal threshold
+
+For this mini-optimisation I'm implementing a __simple profit maximisation__ based on generic costs connected to acquiring a new customer and benefits derived from said acquisition. This can be evolved to include more complex scenarios but it would be outside the scope of this exercise.
+
+To understand which cut-off value is optimal to use we need to simulate the cost-benefit associated with each threshold point. This is a concept derived from the __Expected Value Framework__ as seen on [_Data Science for Business_](https://www.goodreads.com/book/show/17912916-data-science-for-business)
+
+To do so I need 2 things:
+
+- __Expected Rates for each threshold__ - These can be retrieved from the confusion matrix
+
+- __Cost/Benefit for each customer__ - I will need to simulate these based on assumptions 
+
+
+
+### Expected rates
+
+Expected rates can be conveniently retrieved for all cut-off points using `h2o.metric`.
+
+```{r}
+# Get expected rates by cutoff
+expected_rates <- h2o.metric(perf_drf_final) %>%
+    as.tibble() %>%
+    select(threshold, tpr, fpr, fnr, tnr)
+
+expected_rates
+```
+
+
+### Cost/Benefit Information
+
+The cost-benefit matrix is a business assessment of the cost and benefit for each of four potential outcomes. To create such matrix I will have to make a few assumptions about the __expenses and advantages__ that an organisation should consider when carrying out __an advertising-led procurement drive__.
+
+Let's assume that the __cost of selling a term deposits__ is of __£30 per customer__. This would include the likes of performing the direct marketing activity (training the call centre reps, setting time aside for active calls, etc.) and incentives such as offering a discounts on another financial product or on boarding onto membership schemes offering benefits and perks. A banking organisation will incur in this type of cost in two cases: when they correctly predict that a customer will subscribe ( __true positive__, TP), and when they incorrectly predict that a customer will subscribe ( __false positive__, FP). 
+
+Let’s also assume that the __revenue of selling a term deposits__ to an existing customer is of __£80 per customer__. The organisation will guarantee this revenue stream when the model predicts that a customer will subscribe and they actually do ( __true positive__, TP).
+
+Finally, there’s the __true negative__ (TN) scenario where we correctly predict that a customer won’t subscribe. In this case we won’t spend any money but won't earn any revenue. 
+
+Here’s a quick recap of the cost scenarios:
+
+- __True Positive__ (TP) - predict will subscribe, and they actually do: COST: -£30; REV £80 
+
+- __False Positive__ (FP) - predict will subscribe, when they actually wouldn’t: COST: -£30; REV £0 
+
+- __True Negative__ (TN) - predict won't subscribe, and they actually don’t: COST: £0; REV £0 
+
+- __False Negative__ (FN) - predict won't subscribe, but they actually do: COST: £0; REV £0 
+
+
+I create a function to calculate the expected cost using the probability of a _positive case_ (p1) and the cost/benefit associated with a _true positive_ (cb_tp) and a _false positive_ (cb_fp). No need to include the _true negative_ or _false negative_ here as they're both zero. 
+
+I'm also including the __expected_rates__ data frame created previously with the expected rates for each threshold (400 thresholds, ranging from 0 to 1).
+
+```{r}
+# Function to calculate expected profit
+expected_profit_func <- function(p1, cb_tp, cb_fp) {
+  
+    tibble(
+        p1    = p1,
+        cb_tp = cb_tp,
+        cb_fp = cb_fp
+        ) %>%
+    
+        # add expected rates
+        mutate(expected_rates = list(expected_rates)) %>%
+        unnest() %>%
+    
+        # calculate the expected profit
+        mutate(
+            expected_profit =   p1    * (tpr * cb_tp) + 
+                             (1 - p1) * (fpr * cb_fp)
+        ) %>%
+        select(threshold, expected_profit)
+}
+```
+
+
+
+### Multi-Customer Optimization
+
+Now to understand how a multi customer dynamic would work, I'm creating a hypothetical 10 customer group to test my function on. This is a simplified view in that I'm applying the same structure to all customers but the cost/benefit framework can be tailored to the individual customer to reflect their separate product and service level set up and the process can be easily adapted to optimise towards different KPIs (like net profit, CLV, acquisitions, etc.)
+
+```{r}
+# Ten Hypothetical Customers 
+ten_cust <- tribble(
+    ~"cust",   ~"p1",  ~"cb_tp",  ~"cb_fp",
+    'ID1001',   0.1,    80 - 30,     -30,
+    'ID1002',   0.2,    80 - 30,     -30,
+    'ID1003',   0.3,    80 - 30,     -30,
+    'ID1004',   0.4,    80 - 30,     -30,
+    'ID1005',   0.5,    80 - 30,     -30,
+    'ID1006',   0.6,    80 - 30,     -30,
+    'ID1007',   0.7,    80 - 30,     -30,
+    'ID1008',   0.8,    80 - 30,     -30,
+    'ID1009',   0.9,    80 - 30,     -30,
+    'ID1010',   1.0,    80 - 30,     -30
+)
+```
+
+I use `purrr` to map the `expected_profit_func()` to each customer, returning a data frame of expected cost per customer by threshold value. This operation creates a nester tibble, which I have to `unnest()` to expand the data frame to one level. 
+
+```{r, comment=F}
+# calculate expected cost for each at each threshold
+expected_profit_ten_cust <- ten_cust %>%
+    # pmap to map expected_profit_func() to each item
+    mutate(expected_profit = pmap(.l = list(p1, cb_tp, cb_fp), 
+                                  .f = expected_profit_func)) %>%
+    unnest() %>%
+    select(cust, p1, threshold, expected_profit) 
+```
+
+
+Then, I can visualize the expected cost curves for each customer.
+```{r}
+# Visualising Expected Cost 
+expected_profit_ten_cust %>%
+    ggplot(aes(threshold, expected_profit, 
+               colour = factor(cust)), 
+               group = cust) +
+    geom_line(size = 1) +
+    theme_minimal()  +
+    tidyquant::scale_color_tq() +
+    labs(title = "Expected Profit Curves",
+         colour = "Customer No." ) +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+Finally, I can aggregate the expected cost, visualise the final curve and highlight the optimal threshold.
+
+```{r}
+# Aggregate expected cost by threshold 
+total_expected_profit_ten_cust <- expected_profit_ten_cust %>%
+    group_by(threshold) %>%
+    summarise(expected_profit_total = sum(expected_profit)) 
+
+# Get maximum optimal threshold 
+max_expected_profit <- total_expected_profit_ten_cust %>%
+    filter(expected_profit_total == max(expected_profit_total))
+
+# Visualize the total expected profit curve
+total_expected_profit_ten_cust %>%
+    ggplot(aes(threshold, expected_profit_total)) +
+    geom_line(size = 1) +
+    geom_vline(xintercept = max_expected_profit$threshold) +
+    theme_minimal() +
+    labs(title = "Expected Profit Curve - Total Expected Profit",
+         caption  = paste0('threshold @ max = ', 
+                          max_expected_profit$threshold %>% round(3))) +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+This has __some important business implications__. Based on our hypothetical 10-customer group, choosing the optimised threshold of `0.092` would yield a total profit of nearly __£164__ compared to the nearly __£147__ associated with the automatically selected cut-off of `0.190`. 
+
+This would result in an additional expected profit of __nearly £1.7 per customer__. Assuming that we have a customer base of approximately __500,000__, switching to the optimised model could generate an additional __expected profit of £850k__!
+
+```{r}
+total_expected_profit_ten_cust %>% 
+  slice(184, 121) %>%
+  round(3) %>%
+  mutate(diff = expected_profit_total - lag(expected_profit_total))
+```
+
+It is easy to see that, depending on the size of your business, the magnitude of potential profit increase could be a significant.
+
+
+## Closing thoughts
+
+In this final piece of the puzzle, I've taken my __final random forest__ model and implemented a __multi-customer profit optimization__ that revealed a potential additional expected profit of __nearly £1.7 per customer__ (or __£850k__ if you had a 500,000 customer base).
+
+Furthermore, I've introduced key concepts like the __threshold and F1 score__ and the __precision-recall tradeoff__ and explained why it's highly important to decide which cutoff to call YES.
+
+After exploring, cleansing and formatting the data, fitting and comparing multiple models and choosing the best one, sticking with the default threshold @ Max F1 would be stopping short of the ultimate "so what?" that puts all that hard work into prospective. 
+
+
+One final thing: don’t forget to shut-down the h2o instance when you’re done!
+
+```{r, eval=TRUE}
+h2o.shutdown(prompt = FALSE)
+```
+
+
+### Code Repository
+
+The full R code and all relevant files can be found on my GitHub profile @ [__Propensity Modelling__](https://github.com/DiegoUsaiUK/Propensity_Modelling) 
+
+
+### References
+
+* For the original paper that used the data set see: [__A Data-Driven Approach to Predict the Success of Bank Telemarketing. Decision Support Systems__](http://repositorium.sdum.uminho.pt/bitstream/1822/30994/1/dss-v3.pdf), S. Moro, P. Cortez and P. Rita. 
+
+* For an advanced tutorial on sales forecasting and product backorders optimisation see Matt Dancho's [__Predictive Sales Analytics: Use Machine Learning to Predict and Optimize Product Backorders__](https://www.business-science.io/business/2017/10/16/sales_backorder_prediction.html)
+
+* For the __Expected Value Framework__ see: [_Data Science for Business_](https://www.goodreads.com/book/show/17912916-data-science-for-business)
+
+
+
+
+
