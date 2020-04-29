@@ -2,8 +2,20 @@
 title: "Using h2o and DALEX to Estimate the Likelihood of Purchasing a Financial Product"
 subtitle:  "Propensity Modelling - Part 2 of 3: Estimate Several Models and Compare Their Performance Using a Model-agnostic Methodology"
 author: "Diego Usai"
-date: "17 February 2020"
-output: html_document
+date: "17 March 2020"
+output:
+  html_document:
+    theme: spacelab
+    # df_print: paged
+    highlight: pygments
+    number_sections: false
+    toc: true
+    toc_float: true
+    toc_depth : 4
+    font-family: Roboto
+    code_folding: none
+    keep_md: false
+    dpi: 300
 ---
 
 ```{r setup, include=FALSE}
@@ -13,8 +25,8 @@ knitr::opts_chunk$set(
   message    = FALSE,  # FALSE to avoid package loading messages
   cache      = TRUE,  # TRUE to save every single chunck to a folder
   echo       = TRUE,   # TRUE to display code in output document
-  out.width  = "80%",
-  out.height = "80%",
+  out.width  = "100%",
+  out.height = "100%",
   fig.align  = "center"
 )
 ```
@@ -34,7 +46,7 @@ library(tictoc)
 ```
 
 
-# Introduction
+## Introduction
 
 In this day and age, a business that leverages data to understand the drivers of its customers' behaviour has a true competitive advantage. Organisations can dramatically improve their performance in the market by analysing customer level data in an effective way and focus their efforts towards those that are more likely to engage. 
 
@@ -56,18 +68,7 @@ Last, I'll fit __one final model__ that combines findings from the exploratory a
 
 ## Modelling strategy
 
-In any analytics study, there are several steps I would normally take to ensure an effective modelling strategy: 
-
-- I would __fit several models__, compare their performance and pick the most suitable one for the “So what?” analysis
-
-- I would implement __grid search__ to fine tune parameters for all models and improve their predictive performance
-
-- In case of class imbalance, I would test __different resampling techniques__, compare their output and use the one that best suits the data structure and the analysis goals
-
-
-In order to keep project running time reasonable, I made a number of choices. 
-
-1 - First of all, I've opted for __h2o__ as my modelling platform as it offers a number of advantages: 
+In order to stick to a reasonable project running time, I've opted for __h2o__ as my modelling platform as it offers a number of advantages: 
 
 - it very easy to use and you can __estimate several Machine Learning models__ in no time
 
@@ -75,9 +76,9 @@ In order to keep project running time reasonable, I made a number of choices.
 
 - it has a functionality that __takes care of the class imbalance__ highlighted in the Data Exploration phase - I simply set `balance_classes` = TRUE in the model specification, more on this later on
 
-- I can enable __cross-validation__ to be carried out without the need for a separate `validation frame` to be "carved out" of the training set 
+- __cross-validation__ can be enabled without the need for a separate `validation frame` to be "carved out" of the training set 
 
-One aspect I __did not manage to cover__ in this project was __parameters fine tuning__ (a.k.a. grid search). This is mostly due to the limitations of my current laptop, which lacks adequate computing power: even enabling the built-in __h2o__ parallel processing had my machine freeze and crash several times. I will explore more computational hungry tasks when I'll eventually upgrade to a more powerful computer.  
+- __hyper-parameters fine tuning__ (a.k.a. grid search) can be implemented alogside a number of strategies that ensure running time is capped without compromising on performance
 
 
 ### Creating the training and validation sets 
@@ -129,13 +130,53 @@ x <- setdiff(names(train_tbl %>% as.h2o()), y)
 
 ### Fitting the models
 
-It's now time to fit some models: for this project I'm estimating a __Generalised Linear Model__ (a.k.a. Elastic Net), a __Random Forest__ (which h2o refers to at _Distributed Random Forest_) and a __Gradient Boosting Machine__ (or GBM). Note that all of these models have 2 parameters in common: 
+Use the random grid to search for best hyper-parameters
 
-* the `nfolds` parameter, which enables __cross-validation__ to be carried out without the need for a validation_frame - if set to 5 for instance, it will perform a 5-fold cross-validation
+It's now time to fit some models: for this project I'm estimating a __Generalised Linear Model__ (a.k.a. Elastic Net), a __Random Forest__ (which h2o refers to at _Distributed Random Forest_) and a __Gradient Boosting Machine__ (or GBM). 
 
-* the `balance_classes` parameter is set to _TRUE_ to account for the imbalance in the target variable highlighted during the exploratory analysis. When enabled, h2o will either under-sample the majority class or oversample the minority class.
+Before tackling the actual model formulations, I need to set up a random grid for the `tree-based` models (DRF and GBM) to search for best hyper-parameters. To do so, I create a number of arguments for the `h2o.grid()` function.
 
-For the `tree-based` models (DRF and GBM) I’m also using some _control parameters_ to manage the models' estimation running time:
+First, I define the __search parameters__ to be passed to the `hyper_params`argument:
+
+* `sample_rate` is used to set the row sampling rate for each tree
+
+* `col_sample_rate_per_tree` defines the column sampling for each tree
+
+* `max_depth` specifies the maximum tree depth            
+
+* `min_rows` to fix the minimum number of observations per leaf
+
+* `mtries`(DRF only) indicates the columns to randomly select on each node of the tree  
+
+* `learn_rate`(GBM only) specifies the rate at which the model learns when building a model
+
+
+```{r}
+# DRF hyperparameters
+hyper_params_drf <- 
+  list(
+     mtries                   = seq(2, 5, by = 1), 
+     sample_rate              = c(0.65, 0.8, 0.95),
+     col_sample_rate_per_tree = c(0.5, 0.9, 1.0),
+     max_depth                = seq(1, 30, by = 3),
+     min_rows                 = c(1, 2, 5, 10)
+   )
+
+# GBM hyperparameters
+hyper_params_gbm <- 
+  list(
+    learn_rate               = c(0.01, 0.1),
+    sample_rate              = c(0.65, 0.8, 0.95),
+    col_sample_rate_per_tree = c(0.5, 0.9, 1.0),
+    max_depth                = seq(1, 30, by = 3),
+    min_rows                 = c(1, 2, 5, 10)
+    )
+```
+
+
+To help manage the models' estimation running time, I’m also defining some _control parameters_ to be passed to the `search_criteria` argument: 
+
+* The `strategy` argument is set to __RandomDiscrete__ for the search to randomly select a combination from the grid search parameters
 
 * Setting `stopping_metric` to AUC as the error metric for early stopping - the models will stop building new trees when the metric ceases to improve
 
@@ -143,51 +184,96 @@ For the `tree-based` models (DRF and GBM) I’m also using some _control paramet
 
 * I’m using `stopping_tolerance` to set minimal improvement needed for the training process to continue
 
+* `max_runtime_secs` restricts the search time to __one hour per model__
+
+```{r}
+search_criteria_all <- 
+   list(
+      strategy           = "RandomDiscrete",
+      stopping_metric    = "AUC",    
+      stopping_rounds    = 10,
+      stopping_tolerance = 0.0001,
+      max_runtime_secs   = 60 * 60
+   )
+``` 
+
+
+At last, I can set up the models' formulations. Note that all models have 2 parameters in common:
+
+* the `nfolds` parameter, which enables __cross-validation__ to be carried out without the need for a validation_frame - if set to 5 for instance, it will perform a 5-fold cross-validation
+
+* the `balance_classes` parameter is set to _TRUE_ to account for the imbalance in the target variable highlighted during the exploratory analysis. When enabled, h2o will either under-sample the majority class or oversample the minority class.
+
 ```{r, eval=FALSE}
 # elastic net model 
-glm_model <- h2o.glm(
-  x               = x, 
-  y               = y, 
-  training_frame  = train_tbl %>% as.h2o(),
-  balance_classes = TRUE,
-  nfolds          = 5,
-  family          = "binomial",
-  seed            = 1975
-  )
+glm_model <- 
+  h2o.glm(
+    x               = x,
+    y               = y, 
+    training_frame  = train_tbl %>% as.h2o(),
+    balance_classes = TRUE,
+    nfolds          = 10,
+    family          = "binomial",
+    seed            = 1975
+    )
 
 # random forest model
-drf_model <- h2o.randomForest(
-  x                  = x, 
-  y                  = y,
-  training_frame     = train_tbl %>% as.h2o(),
-  balance_classes    = TRUE,
-  nfolds             = 5,
-  ntrees             = 500,
-  stopping_metric    = "AUC",    
-  stopping_rounds    = 5,
-  stopping_tolerance = 0.005,
-  seed               = 1975
-  )
+drf_model_grid <- 
+  h2o.grid(
+    algorithm       = "randomForest", 
+    x               = x, 
+    y               = y,
+    training_frame  = train_tbl %>% as.h2o(),
+    balance_classes = TRUE, 
+    nfolds          = 10,
+    ntrees          = 1000,
+    grid_id         = "drf_grid",
+    hyper_params    = hyper_params_drf,
+    search_criteria = search_criteria_all,
+    seed            = 1975
+    )
 
 # gradient boosting machine model
-gbm_model <-  h2o.gbm(
-  x                  = x, 
-  y                  = y,
-  training_frame     = train_tbl %>% as.h2o(),
-  balance_classes    = TRUE,
-  nfolds             = 5,
-  ntrees             = 500,
-  stopping_metric    = "AUC",    
-  stopping_rounds    = 5,
-  stopping_tolerance = 0.005,
-  seed               = 1975
-  )
+gbm_model_grid <- 
+  h2o.grid(
+    algorithm       = "gbm",
+    x               = x, 
+    y               = y,
+    training_frame  = train_tbl %>% as.h2o(),
+    balance_classes = TRUE, 
+    nfolds          = 10,
+    ntrees          = 1000,
+    grid_id         = "gbm_grid",
+    hyper_params    = hyper_params_gbm,
+    search_criteria = search_criteria_all,
+    seed            = 1975
+    )
+```
+
+I sort the tree-based model by _AUC_ score and retrieve the lead models from the grid
+```{r, eval=FALSE}
+# Get the DRM grid results, sorted by AUC 
+drf_grid_perf <- 
+  h2o.getGrid(grid_id     = "drf_grid",
+               sort_by    = "AUC",
+               decreasing = TRUE)
+
+# Fetch the top DRF model, chosen by validation AUC
+drf_model <- 
+  h2o.getModel(drf_grid_perf@model_ids[[1]])
+
+# Get the GBM grid results, sorted by AUC 
+gbm_grid_perf <- 
+  h2o.getGrid(grid_id     = "gbm_grid",
+               sort_by    = "AUC",
+               decreasing = TRUE)
+
+# Fetch the top GBM model, chosen by validation AUC
+gbm_model <- 
+  h2o.getModel(gbm_grid_perf@model_ids[[1]])
 ```
 
 __ALWAYS REMEMBER__ that __h2o__ requires a live connection to their servers to operate properly. For that reason it is important that you __save away all models you estimate in your current live connection__ so that they can be accessed at any time. 
-
-This is especially important in the even of momentary loss of web connection, which I figured out to my expense. In case connection is lost and you have to restart the __h2o cluster__, models that are still in the RStudio environment but estimated in the previous session are NOT recognised as part of the current cluster and need to be re-estimated. This could be a little annoying, especially when you fit complex models that require extensive running time to converge.
-
 ```{r, eval=FALSE, include=TRUE}
 # set path to get around model path being different from project path
 path = "../03_models/"
@@ -205,10 +291,12 @@ h2o.saveModel(gbm_model, path)
 ```{r, load previously estimated h2o models, eval=TRUE, include=FALSE} 
 glm_model <- h2o.loadModel(path = "../03_models/GLM_model_R_1587120349395_1")
 
-drf_model <- h2o.loadModel(path = "../03_models/DRF_model_R_1587120349395_19")
+drf_model <- h2o.loadModel(path = "../03_models/drf_grid_model_2")
 
-gbm_model <- h2o.loadModel(path = "../03_models/GBM_model_R_1587120349395_248")
+gbm_model <- h2o.loadModel(path = "../03_models/gbm_grid_model_3")
 ```
+
+This is especially important in the event of momentary loss of web connection, which I figured out to my expense. In case connection is lost and you have to restart the __h2o cluster__, models that are still in the RStudio environment but estimated in the previous session are NOT recognised as part of the current cluster and need to be re-estimated. This could be a little annoying, especially when you fit complex models that require extensive running time to converge.
 
 
 ## Performance assessment
@@ -311,7 +399,7 @@ At last, I'm ready to pass the __explainer objects__ to several DALEX functions 
 
 ## Assessing the models 
 
-Given that performance measures may reflect a different aspect of the predictive performance of a model, it is important to evaluate and compare several metrics when appraising a model.
+Given that performance measures may reflect a different aspect of the predictive performance of a model, it is important to evaluate and compare several metrics when appraising a model and DALEX does just that!
 
 To evaluate and compare my models' performance, I've drawn inspiration from the framework used by Przemyslaw Biecek and Tomasz Burzykowski in their book, [__Explanatory Model Analysis__](https://pbiecek.github.io/ema/introduction.html), which is structured around key questions:
 
@@ -325,7 +413,7 @@ To evaluate and compare my models' performance, I've drawn inspiration from the 
 
 
 
-### __1 - Are the models well fitted?__
+### 1 - Are the models well fitted?
 
 #### General Model Fit
 
@@ -364,14 +452,13 @@ p2 <- plot(resids_glm, resids_drf, resids_gbm, geom = "boxplot") +
 gridExtra::grid.arrange(p2, p1, nrow = 1)
 ```
 
-In spite of achieving the second highest AUC score, the random forest model appears to perform better when considering the median absolute residuals. Looking at the distribution of the residuals on the right-hand side, you can see that the median residuals are lowest for the random forest model. This is also mirrored by the boxplots on the left-hand side, where the random forest also has the lowest median absolute residual value.
+The DRF and GBM models appear to perform on a par with one another, given the median absolute residuals. Looking at the residuals distribution on the right-hand side, you can see that the median residuals are the lowest for these two models, with the GLM  seeing a higher number of tail residuals. This is also mirrored by the boxplots on the left-hand side, where the tree-based models both achieve the lowest median absolute residual value. 
 
-
-### __2 - How do the models compare with one another?__
+### 2 - How do the models compare with one another?
 
 #### ROC and AUC
 
-The __Receiver Operating Characteristic (ROC)__ curve is a graphical method that allows to visualise a classification model performance against a random guess, which is represented by the striped line on the graph. The curve plots the true positive rate (TPR) on the y-axis against the false positive rate (FPR) on the x-axis. 
+The [__Receiver Operating Characteristic (ROC)__](https://en.wikipedia.org/wiki/Receiver_operating_characteristic) curve is a graphical method that allows to visualise a classification model performance against a random guess, which is represented by the striped line on the graph. The curve plots the true positive rate (TPR) on the y-axis against the false positive rate (FPR) on the x-axis. 
 
 ```{r}
 eva_glm <- DALEX::model_performance(explainer_glm)
@@ -380,29 +467,29 @@ eva_gbm <- DALEX::model_performance(explainer_gbm)
 
 plot(eva_glm, eva_dfr, eva_gbm, geom = "roc") +
   ggtitle("ROC Curves - All Models",  
-          "AUC_glm = 0.750    AUC_drf = 0.785   AUC_gbm = 0.794") +
+          "AUC_glm = 0.750  AUC_drf = 0.799  AUC_gbm = 0.798") +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-The insight that can be gathered from a ROC curve is two-fold: 
+The insight from a ROC curve is two-fold: 
 
-* I can see that my model is performing much better than a random guess
+* __Direct read__: All models are performing much better than a random guess
 
-* From this I can also calculate the [__AUC (Area Under the Curve)__](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve), which summarises the ROC curve and can be used to compare models performance - the perfect classifier would have AUC = 1. 
+* __Compared read__: the [__AUC (Area Under the Curve)__](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve) summarises the ROC curve and can be used to directly compare models performance - the perfect classifier would have AUC = 1. 
 
-All models performs much better that random guessing and achieves a AUC of .75-.79, with the GBM achieving the highest score of 0.794.
+All models performs much better that random guessing and achieves a AUC of .75-.80, with the DRF achieving the highest score of 0.799.
 
 
-### __3 - Which variables are important in the models?__
+### 3 - Which variables are important in the models?
 
 #### Variable importance plots
 
 Each ML algorithm has its own way to assess the importance of each variable: linear models for instance refer to their coefficients, whereas tree-based models look at impurity, which makes it difficult to compare variable importance across models. 
 
-DALEX calculates variable importance measures via permutation, which is model agnostics, allowing for direct comparison between models of different structure. However, we should bear in mind that with variable importance scores based on permutations, calculations slow down when the number of features increases. 
+DALEX calculates variable importance measures via permutation, which is model agnostics, allowing for direct comparison between models of different structure. However, with variable importance scores based on permutations, we should remember that calculations slow down when the number of features increases. 
 
-Once again, I'm passing the "explainer" for each single model to the `feature_importance()` function and setting `n_sample` to 8000 to use practically all observations available. Although not exorbitant, the total execution time was __nearly 20 minute__ but this is based on a relatively small dataset. Always bear in mind that computation speed can be increased by reducing `n_sample`, which is especially important for larger datasets.
+Once again, I'm passing the "explainer" for each single model to the `feature_importance()` function and setting `n_sample` to 8000 to use practically all available observations. Although not exorbitant, the total execution time was __nearly 30 minute__ but this is based on a relatively small dataset. But don't forget that computation speed can be increased by reducing `n_sample`, which is especially important for larger datasets.
 
 ```{r, cache=TRUE, eval=TRUE}
 # measure execution time
@@ -422,7 +509,7 @@ vip_gbm <- feature_importance(explainer_gbm, n_sample = 8000,
 tictoc::toc()
 ```
 
-Now I only have to feed the __vip__ objects to a plotting function: as suggested by the auto-generated x-axis label ( __Drop-out loss__), the main intuition behind how variable importance is calculated lies in how much the model fit would decreases if the contribution of a selected explanatory variable was removed. The larger the segment, the larger the loss when that variable is dropped from the model.
+Now I only have to pass the __vip__ objects to a plotting function: as suggested by the auto-generated x-axis label ( __Drop-out loss__), the main intuition behind how variable importance is calculated lies in how much the model fit would decrease if the contribution of a selected explanatory variable was removed. The larger the segment, the larger the loss when that variable is dropped from the model.
 
 ```{r, cache=TRUE, eval=TRUE, include=T}
 # plotting top 10 feature only for clarity of reading
@@ -437,14 +524,14 @@ I like this plot as it brings together a wealth of information.
 
 First of all you can notice that, although with slightly different relative weights, the top 5 features are common to each models, with `nr_employed` ( __employed in the economy__) being the single most important predictor in all of them. This consistency is reassuring as it tells us that all models are picking up the same structure and interactions in the data, and gives us assurance that these features have strong predictive power.
 
-You can also notice the __distinct starting point__ for the x-axis left edge, which picks up on the difference in the RMSE loss between the three models: in this case the __elastic net__ model has the highest RMSE, suggesting the greater number of tail residuals seen earlier in the residual diagnostics is probably penalising the RMSE score.
+You can also notice the __distinct starting point__ for the x-axis left edge, which reflects the difference in the RMSE loss between the three models: in this case the __elastic net__ model has the highest RMSE, suggesting the higher number of tail residuals seen earlier in the residual diagnostics is probably penalising the RMSE score.
 
 
-### __4 - How does a single variable affect the average prediction?__
+### 4 - How does a single variable affect the average prediction?
 
 #### Partial Dependence profiles
 
-After we have identified the relative predictive power of each variable, we may want to investigate how their relationship with the predicted response differ across all three models. __Partial Dependency (PD) plots__, sometimes also referred to as PD profiles, offer a great way to inspect how each model is responding to a particular predictor. 
+After we have identified the relative predictive power of each variable, we may want to investigate how their relationship with the predicted response differ across all three models. __Partial Dependence (PD) plots__, sometimes also referred to as _PD profiles_, offer a great way to inspect how each model is responding to a particular predictor. 
 
 We can start with having a look at the single most important feature, `nr_employed`:
 ```{r, eval=T}
@@ -459,7 +546,7 @@ plot(pdp_glm$agr_profiles, pdp_drf$agr_profiles, pdp_gbm$agr_profiles) +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-Although with different average prediction weights, all three models found that bank customers are more likely to sigh up to a term deposit when the level of __employed in the economy__ is up to 5.099m (`nInf_5099.1`). Both __elastic net__ and __random forest__ have found the exact same hierarchy of predictive power among the 3 different levels of `nr_employed` (much subtler to spot for __random forest__ but it's there) that we observed in the `correlationfunnel` analysis, with __GBM__ being the one slightly out of kilter.
+Although with different average prediction weights, all three models found that bank customers are more likely to sigh up to a term deposit when the level of __employed in the economy__ is up to 5.099m (`nInf_5099.1`). Both __elastic net__ and __random forest__ have found the exact same hierarchy of predictive power among the 3 different levels of `nr_employed` (less pronounced for the __random forest__) that we observed in the `correlationfunnel` analysis, with __GBM__ being the one slightly out of kilter.
 
 Let's now take a look at `age`, a predictor that, if you recall from the EDA, was NOT expected to have an impact on the target variable: 
 
@@ -477,7 +564,7 @@ plot(pdp_glm$agr_profiles, pdp_drf$agr_profiles, pdp_gbm$agr_profiles) +
 
 One thing we notice is that the range of variation in the average prediction (x-axis) is relatively shallow across the age spectrum (y-axis), confirming the finding from the exploratory analysis that this variable would have a low predictive power. Also, both __GBM__ and __random forest__ are using `age` in a non-linear way, whereas the __elastic net__ model is unable to capture this non-linear dynamic.
 
-Partial Dependency plots could also work as a diagnostic tool: looking at `poutcome` (outcome of the `previous` marketing campaign) reveals that __GBM__ and __random forest__ correctly picked up on a higher probability of signing up when the outcome of a previous campaign was `scs` (success). 
+Partial Dependence plots could also work as a diagnostic tool: looking at `poutcome` (outcome of the `previous` marketing campaign) reveals that __GBM__ and __random forest__ correctly picked up on a higher probability of signing up when the outcome of a previous campaign was success (`scs`). 
 
 ```{r, eval=T}
 # compute PDP for a given variable
@@ -493,7 +580,7 @@ plot(pdp_glm$agr_profiles, pdp_drf$agr_profiles, pdp_gbm$agr_profiles) +
 
 However, the __elastic net__ model fails to do the same, which could represents a serious flaw as success in a previous campaign had a very strong positive correlation with the target variable. 
 
-I'm going to finish with the `month` feature as it offers a great example of one of those cases where you may want to override the model's outcome with industry knowledge and some common sense. Specifically, the __GBM__ model seems to suggest that October and December are periods associated with much better odds of success.
+I'm going to finish with the `month` feature as it offers a great example of one of those cases where you may want to override the model's outcome with industry knowledge and some common sense. Specifically, the __GBM__ model seems to suggest that __March__,  __October__ and __December__ are periods associated with much better odds of success.
 
 ```{r, eval=T}
 # compute PDP for a given variable
@@ -507,7 +594,7 @@ plot(pdp_glm$agr_profiles, pdp_drf$agr_profiles, pdp_gbm$agr_profiles) +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-Based on my previous analysis experience of similar financial products, I would not advise a bank to ramp up their direct marketing activity around the weeks in the run to Christmas as this is a period of the year where consumers focus shifts away from this type of purchases.  
+Based on my previous analysis experience of similar financial products, I would not advise a banking organisation to ramp up their direct marketing activity around the weeks in the run to Christmas as this is a period of the year where the consumers' focus shifts away from this type of purchases.  
 
 
 ### Final model
@@ -525,7 +612,7 @@ In particular, my __final model__:
 - Also drops `emp_var_rate` because of its strong correlation with `nr_employed` and also because conceptually they are controlling for a very similar economic behaviour
 
 ```{r}
-# response variable 
+# response variable remains unaltered
 y <- "subscribed"
 
 # predictors set: remove response variable and 7 predictors
@@ -538,19 +625,35 @@ x_final <- setdiff(names(train_tbl %>%
 For the final model, I'm using the same specification as to the original random forest
 ```{r, eval=FALSE}
 # random forest model
-drf_final <- h2o.randomForest(
-  x                  = x_final, 
-  y                  = y,
-  training_frame     = train_tbl %>% as.h2o(),
-  balance_classes    = TRUE,
-  nfolds             = 5,
-  ntrees             = 500,
-  stopping_metric    = "AUC",    
-  stopping_rounds    = 5,
-  stopping_tolerance = 0.005
-  |
-  )
+drf_final <- 
+  h2o.grid(
+     algorithm       = "randomForest", 
+     x               = x_final, 
+     y               = y,
+     training_frame  = train_tbl %>% as.h2o(),
+     balance_classes = TRUE, 
+     nfolds          = 10,
+     ntrees          = 1000,
+     grid_id         = "drf_grid_final",
+     hyper_params    = hyper_params_drf,
+     search_criteria = search_criteria_all,
+     seed            = 1975
+   )
 ```
+
+Once again, we sort the model by AUC score and retrieve the lead model 
+```{r, eval=FALSE,}
+# Get the grid results, sorted by AUC 
+drf_grid_perf_final <- 
+  h2o.getGrid(grid_id = "drf_grid_final",
+               sort_by = "AUC",
+               decreasing = TRUE)
+
+# Fetch the top DRF model, chosen by validation AUC
+drf_final <- 
+  h2o.getModel(drf_grid_perf_final@model_ids[[1]])
+```
+
 
 Always remember to save your models!
 ```{r, eval=FALSE, include=TRUE}
@@ -562,7 +665,7 @@ h2o.saveModel(drf_final, path)
 ```
 
 ```{r, load previously estimated final drf model, eval=TRUE, include=FALSE} 
-drf_final <- h2o.loadModel(path = "../03_models/DRF_model_R_1587207745751_1")
+drf_final <- h2o.loadModel(path = "../03_models/drf_grid_final_model_1")
 ```
 
 
@@ -574,7 +677,7 @@ For brevity, I am visualising the variable importance plot with the `vip()` func
 vip::vip(drf_final, num_features = 12) +
   ggtitle("Variable Importance", "") + 
   theme_minimal() +
-  theme(plot.title    = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 
@@ -590,25 +693,23 @@ drf_model %>% h2o.performance(newdata = test_tbl %>% as.h2o()) %>% h2o.auc()
 The __AUC__ has only changed by a fraction of a percent, telling me that the model has maintained its predictive power.
 
 
-### A important remark on Partial Dependency Plots
+### A important observation on Partial Dependence Plots
 
-Being already familiar with odds ratios in the context of a logistic regression, I set out to understand whether the same intuition could be extended to black-box classification models. 
+Being already familiar with odds ratios in the context of a logistic regression, I set out to understand whether the same intuition could be extended to black-box classification models. During my research one very interesting post on [__Cross Validated__](https://stats.stackexchange.com/) stood out for drawing a parallel between [__odds ratio from decision tree and random forest__](https://stats.stackexchange.com/questions/93202/odds-ratio-from-decision-tree-and-random-forest).  
 
-During my research I've come across, among others, this very interesting post on [__Cross Validated__](https://stats.stackexchange.com/) that draws a parallel between [__odds ratio from decision tree and random forest__](https://stats.stackexchange.com/questions/93202/odds-ratio-from-decision-tree-and-random-forest).  
-
-Basically, this means that partial dependency plots can be used in a similar way to how odds ratios to define what characteristics of a customer profile influence his/her propensity to performing a certain type of behaviour. 
+Basically, this tells us that Partial Dependence plots can be used in a similar way to how odds ratios to define what characteristics of a customer profile influence his/her propensity to performing a certain type of behaviour. 
 
 For example, features like `job`, `month` and `contact` would provide context around __who__, __when__ and __how__ to target:
 
-* Looking at `job` will tell us that a customer in an _admin_ role is 25% more likely to subscribe that a _self employed_.
+* Looking at `job` will tell us that a customer in an _admin_ role is roughly 25% more likely to subscribe that a _self employed_.
 
-* Contacting a prospective customer in the `month` of _October_ offers on average almost double the chance of a positive outcome than in _September_. 
+* Getting in touch with a prospective customer in the `month` of _October_ will more then double the chance of a positive outcome than in _May_.  
 
-* `contacting` your customer on their _mobile_ will nearly double the chances of subscription than a _telephone_ call.
+* `contacting` your customer on their _mobile_ increases the chances of subscription by nearly a quarter compared to a _telephone_ call.
 
-- _NOTE THAT Partial Dependency Plots for all final model's predictors can be found in the __Appendix___
+__NOTE THAT Partial Dependence Plots for all final model's predictors can be found in the Appendix__
 
-Armed with such insight, one can help __shaping overall communication plans__ by focusing marketing activities towards customers more likely to subscribe to a term deposit.
+Armed with such insight, one can help __shaping overall marketing and communication plans__ to focus on customers more likely to subscribe to a term deposit.
 
 However, these are based on model-level explainers, which reflect an overall, aggregated view. If you're interested to understand how a model yields a prediction for a single observation (i.e. what factors influence the likelihood to engage __at single customer level__), you can resort to the [__Local Interpretable Model-agnostic Explanations (LIME)__](https://www.oreilly.com/content/introduction-to-local-interpretable-model-agnostic-explanations-lime/) method that exploits the concept of a "local model". I will be exploring the LIME methodology in a future post. 
 
@@ -617,7 +718,7 @@ However, these are based on model-level explainers, which reflect an overall, ag
 
 For the analysis part of this project I opted for __h2o__ as my modelling platform. h2o is not only very easy to use but also has a number of built-in functionalities that help speeding up data preparation: it takes care of __class imbalance__ with no need for pre-modelling resampling, automatically __“binarises“ character/factor__ variables, and implements __cross-validation__ without the need for a separate `validation frame` to be "carved out" of the training set.
 
-After estimating a number of models ( a _logistic regression_, a _random forest_ and a _gradient boosting machines_), I have used the __DALEX__ library to __assessed and compared their performance__ through an array of metrics. This library employs a __model-agnostic approach__ that enables to __compare traditional "glass-box" models and "black-box" models__ on the same scale. 
+After setting up a random grid to __search for best hyper-parameters__, I've estimated a number of models ( a _logistic regression_, a _random forest_ and a _gradient boosting machines_) and used the __DALEX__ library to __assess and compare their performance__ through an array of metrics. This library employs a __model-agnostic approach__ that enables to __compare traditional "glass-box" models and "black-box" models__ on the same scale. 
 
 My final model of choice is the __random forest__, which I further refined by combining findings from the exploratory analysis, insight gathered from the models' evaluation and a number of industry-specific/common sense considerations. This ensured a reduced model complexity without compromising on predictive power.
 
@@ -628,9 +729,9 @@ In the past decade __machine learning__ has gained prominence across many analyt
 
 I this project I've explored in particular the __DALEX__ package, which focuses on __Model-Agnostic Interpretability__ and provides a convenient way of comparing performance across multiple models with different structures.
 
-One of its key __advantages__ is the ability to compare contributions of traditional "glass-box" models as well as black-box models on the same scale. However, being permutation-based, one of its main __drawbacks__ is that it does not scale well to large number of predictor variables and larger datasets. 
+One of its key __advantages__ is the ability to compare contributions of traditional "glass-box" models as well as black-box models on the same scale. However, being permutation-based, one of its main __drawbacks__ is that it does not scale well to large number of predictors and larger datasets. 
 
-Depending on the scale of your dataset and number of explanatory variables you want/need to include in your model, you should carefully consider whether to make DALEX your __ML Interpretability__ library of choice.
+Depending on the scale of your dataset and number of explanatory variables you want/need to include in your model, you should carefully consider whether to make DALEX your __Machine Learning Interpretability__ library of choice.
 
 
 ### Code Repository
@@ -639,15 +740,11 @@ The full R code and all relevant files can be found on my GitHub profile @ [__Pr
 
 ### References
 
-* To Speed Up Exploratory Data Analysis see: [__correlationfunnel Package Vignette__](https://business-science.github.io/correlationfunnel/) 
+* For the original paper that used the data set see: [__A Data-Driven Approach to Predict the Success of Bank Telemarketing. Decision Support Systems__](http://repositorium.sdum.uminho.pt/bitstream/1822/30994/1/dss-v3.pdf), S. Moro, P. Cortez and P. Rita. 
 
 * For a technically rigorous but applied take on Machine Learning Interpretability see Bradley Boehmke's [__Model Interpretability with DALEX__](https://uc-r.github.io/dalex)
 
-* For the original paper that used the data set see: [__A Data-Driven Approach to Predict the Success of Bank Telemarketing. Decision Support Systems__](http://repositorium.sdum.uminho.pt/bitstream/1822/30994/1/dss-v3.pdf), S. Moro, P. Cortez and P. Rita. 
-
-* For a in-depth look at tools and techniques to examine fully-trained machine-learning models as a whole, and compare their performance in a model-agnostic framework see: [__Explanatory Model Analysis__](https://pbiecek.github.io/ema/introduction.html), P. Biecek, T. Burzykowski
-
-* For an advanced tutorial on sales forecasting and product backorders optimisation see: [__Predictive Sales Analytics: Use Machine Learning to Predict and Optimize Product Backorders__](https://www.business-science.io/business/2017/10/16/sales_backorder_prediction.html)
+* For a in-depth look at tools and techniques to examine fully-trained machine-learning models and compare their performance in a model-agnostic framework see: [__Explanatory Model Analysis__](https://pbiecek.github.io/ema/introduction.html), P. Biecek, T. Burzykowski
 
 
 ## Appendix
@@ -658,7 +755,7 @@ The full R code and all relevant files can be found on my GitHub profile @ [__Pr
 Update DALEX explainer inputs for the final model 
 ```{r}
 # convert feature variables to a data frame
-x_final <- test_tbl %>% select(-c(subscribed,age, housing, loan, campaign,
+x_final <- test_tbl %>% select(-c(subscribed, age, housing, loan, campaign,
                                      previous, cons_price_idx, emp_var_rate)) %>% as_tibble()
 
 # change response variable to a numeric binary vector
@@ -781,6 +878,7 @@ model_profile(explainer_final, variable = "marital", type = "partial") %>%
         plot.subtitle = element_text(hjust = 0.5))
 ```
 
+
 ```{r, eval=T}
 model_profile(explainer_final, variable = "default", type = "partial") %>% 
   plot() + 
@@ -788,6 +886,8 @@ model_profile(explainer_final, variable = "default", type = "partial") %>%
   theme(plot.title    = element_text(hjust = 0.5), 
         plot.subtitle = element_text(hjust = 0.5))
 ```
+
+
 
 
 One final thing: don’t forget to shut-down the h2o instance when you’re done!
