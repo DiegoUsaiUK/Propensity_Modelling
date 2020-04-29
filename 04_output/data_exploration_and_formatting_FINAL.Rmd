@@ -2,8 +2,20 @@
 title: "Using h2o and DALEX to Estimate Likelihood to Purchase a Financial Product"
 subtitle:  "Propensity Modelling - Part 1 of 3: Data Preparation and Exploratory Data Analysis"
 author: "Diego Usai"
-date: "14 January 2020"
-output: html_document
+date: "14 February 2020"
+output:
+  html_document:
+    theme: spacelab
+    # df_print: paged
+    highlight: pygments
+    number_sections: false
+    toc: true
+    toc_float: true
+    toc_depth : 4
+    font-family: Roboto
+    code_folding: none
+    keep_md: false
+    dpi: 300
 ---
 
 ```{r setup, include=FALSE}
@@ -13,8 +25,8 @@ knitr::opts_chunk$set(
   message    = FALSE,  # FALSE to avoid package loading messages
   cache      = TRUE,  # TRUE to save every single chunck to a folder
   echo       = TRUE,   # TRUE to display code in output document
-  out.width  = "80%",
-  out.height = "80%",
+  out.width  = "100%",
+  out.height = "100%",
   fig.align  = "center"
 )
 ```
@@ -40,7 +52,7 @@ source("../02_scripts/plot_ggpairs_funct.R")
 ```
 
 
-# Introduction
+## Introduction
 
 In this day and age, a business that leverages data to understand the drivers of its customers' behaviour has a true competitive advantage. Organisations can dramatically improve their performance in the market by analysing customer level data in an effective way and focus their efforts towards those that are more likely to engage. 
 
@@ -482,7 +494,7 @@ data_clean %>%
 
 All continuous variables can benefit from some grouping. For simplicity and speed, I'm using the bins calculated by the `correlationfunnel` package. __duration__ will not be processed as I'm NOT including it in any of my models.
 
-#### Example with __consumer confidence index__
+#### Example with _consumer confidence index_
 
 A 3-level binning seems sensible for `cons_price_idx`
 ```{r}
@@ -577,7 +589,7 @@ are strongly correlated to each other, suggesting that only a selection of them 
 
 
 
-### Save dataset
+### Save final dataset
 
 Lastly, I save the `data_final` set for the next phase of the analysis.
 ```{r, eval=F}
@@ -593,21 +605,15 @@ The full R code and all relevant files can be found on my GitHub profile @ [__Pr
 
 ### References
 
-* To Speed Up Exploratory Data Analysis see: [__correlationfunnel Package Vignette__](https://business-science.github.io/correlationfunnel/) 
-
-* For a technically rigorous but applied take on Machine Learning Interpretability see Bradley Boehmke's [__Model Interpretability with DALEX__](https://uc-r.github.io/dalex)
-
 * For the original paper that used the data set see: [__A Data-Driven Approach to Predict the Success of Bank Telemarketing. Decision Support Systems__](http://repositorium.sdum.uminho.pt/bitstream/1822/30994/1/dss-v3.pdf), S. Moro, P. Cortez and P. Rita. 
 
-* For a in-depth look at tools and techniques to examine fully-trained machine-learning models as a whole, and compare their performance in a model-agnostic framework see: [__Explanatory Model Analysis__](https://pbiecek.github.io/ema/introduction.html), P. Biecek, T. Burzykowski
-
-* For an advanced tutorial on sales forecasting and product backorders optimisation see: [__Predictive Sales Analytics: Use Machine Learning to Predict and Optimize Product Backorders__](https://www.business-science.io/business/2017/10/16/sales_backorder_prediction.html)
+* To Speed Up Exploratory Data Analysis see: [__correlationfunnel Package Vignette__](https://business-science.github.io/correlationfunnel/) 
 
 
 
 ## Appendix
 
-#### Table 1 – Variables Description
+### Table 1 – Variables Description
 
 Category       | Attribute    | Description                   | Type
 :--------------|:-------------|:------------------------------|:------------------------------
