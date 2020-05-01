@@ -20,11 +20,11 @@ __In the third and last part__, I'll fit a __final model__ that combines finding
 
 You can find the final articles on [__my website__](https://diegousai.io/):
 
-* _Data Preparation and Exploratory Data Analysis_ - [__Part 1 of 3__](https://diegousai.io/2020/02/propensity-modelling-1-of-3/)
+* _Part 1 of 3 - Data Preparation and Exploratory Data Analysis_ - [__Link__](https://diegousai.io/2020/02/propensity-modelling-1-of-3/)
 
-* _Estimate Several Models and Compare Their Performance Using a Model-agnostic Methodology_ - [__Part 2 of 3__](https://diegousai.io/2020/03/propensity-modelling-2-of-3/)
+* _Part 2 of 3 - Estimate Several Models and Compare Their Performance Using a Model-agnostic Methodology_ - [__Link__](https://diegousai.io/2020/03/propensity-modelling-2-of-3/)
 
-* _Optimise Profit With the Expected Value Framework_ - [__Part 3 of 3__](https://diegousai.io/2020/04/propensity-modelling-3-of-3/)
+* _Part 3 of 3 - Optimise Profit With the Expected Value Framework_ - [__Link__](https://diegousai.io/2020/04/propensity-modelling-3-of-3/)
 
 I've also published an abridged version of the combined articles on [__Analytics Vidhya__](https://medium.com/analytics-vidhya)
 
