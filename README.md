@@ -10,9 +10,23 @@ Once you understand the probability of a certain customer to interact with your 
 
 In this project I'm analysing the results of a bank __direct marketing campaign__ to sell term deposits in order to identify what type of customer is more likely to respond. The marketing campaigns were based on phone calls and more than one contact to the same client was required at times. 
 
-First, I am going to carry out an __extensive data exploration__ and use the results and insights to prepare the data for analysis.
+First, I am going to carry out an __extensive data exploration__ and use the results and insights to prepare the data for analysis. 
 
-Then, I'm __estimating a number of models__ and assess their performance and fit to the data using a __model-agnostic methodology__ that enables to __compare traditional "glass-box" models and "black-box" models__.
+Then, I'm __estimating a number of models__ and assess their performance and fit to the data using a __model-agnostic methodology__ that enables to __compare traditional "glass-box" models and "black-box" models__. 
 
-Last, I'll fit __one final model__ that combines findings from the exploratory analysis and insight from models' selection and use it to __run a revenue optimisation__.
+Last, I'll fit __one final model__ that combines findings from the exploratory analysis and insight from models' selection and use it to __run a revenue optimisation__. 
+
+## Links
+
+You can find the final articles on [__my website__](https://diegousai.io/):
+
+* See : [__Propensity Modelling - Part 1 of 3 - Data Preparation and Exploratory Data Analysis__](https://diegousai.io/2020/02/propensity-modelling-1-of-3/)
+
+* See : [__Propensity Modelling - Part 2 of 3 - Estimate Several Models and Compare Their Performance Using a Model-agnostic Methodology__](https://diegousai.io/2020/03/propensity-modelling-2-of-3/)
+
+* See : [__Propensity Modelling - Part 3 of 3 - Optimise Profit With the Expected Value Framework__](https://diegousai.io/2020/04/propensity-modelling-3-of-3/)
+
+I've also published the article on [__Analytics Vidhya__](https://medium.com/analytics-vidhya)
+
+
 
