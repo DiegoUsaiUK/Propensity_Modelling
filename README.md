@@ -10,7 +10,7 @@ Once you understand the probability of a certain customer to interact with your 
 
 In this project I'm analysing the results of a bank __direct marketing campaign__ to sell term deposits in order to identify what type of customer is more likely to respond. The marketing campaigns were based on phone calls and more than one contact to the same client was required at times. 
 
-__In the First part__, I am going to carry out an __extensive data exploration__ and use the results and insights to prepare the data for analysis. 
+__In the first part__, I am going to carry out an __extensive data exploration__ and use the results and insights to prepare the data for analysis. 
 
 __In the second part__, I'm __estimating a number of models__ and assess their performance and fit to the data using a __model-agnostic methodology__ that enables to __compare traditional "glass-box" models and "black-box" models__. 
 
