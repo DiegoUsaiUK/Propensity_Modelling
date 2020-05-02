@@ -182,7 +182,7 @@ To fully comprehend this dynamic and its implications, let's start with taking a
 
 - Conversely, at __threshold one__ ( _highest precision, lowest recall_) the model tells you that nobody is likely to subscribe so you should __contact no one__. This would save you tons of money in marketing cost but you'd be missing out on the additional revenue from those customers who would've subscribed, had they been notified about the term deposit through direct marketing. Once again, not an optimal strategy.
 
-With this in mind, when moving to a higher threshold the model becomes more "choosy" on who it classifies as `subscribed = Yes`. As a consequence, you become more conservative on who to contact ( __higher precision__) and reduce your acquisition cost, but at the same time you increase your chance of not reaching prospective subscribes ( __lower recall__), missing out on potential revenue.
+When moving to a higher threshold the model becomes more "choosy" on who it classifies as `subscribed = Yes`. As a consequence, you become more conservative on who to contact ( __higher precision__) and reduce your acquisition cost, but at the same time you increase your chance of not reaching prospective subscribes ( __lower recall__), missing out on potential revenue.
 
 The key question here is __where do you stop?__ Is there a "sweet spot" and if so, how do you find it? Well, that will depend entirely on the goal you want to achieve. In the next section I'll be running a mini-optimisation with the goal to __maximise profit__.
 
@@ -267,7 +267,7 @@ expected_profit_func <- function(p1, cb_tp, cb_fp) {
 
 ### Multi-Customer Optimization
 
-Now to understand how a multi customer dynamic would work, I'm creating a hypothetical 10 customer group to test my function on. This is a simplified view in that I'm applying the same structure to all customers but the cost/benefit framework can be tailored to the individual customer to reflect their separate product and service level set up and the process can be easily adapted to optimise towards different KPIs (like net profit, CLV, acquisitions, etc.)
+Now to understand how a multi customer dynamic would work, I'm creating a __hypothetical 10 customer group__ to test my function on. This is a __simplified__ view in that I'm applying the __same cost and revenue structure to all customers__ but the cost/benefit framework can be tailored to the individual customer to reflect their separate product and service level set up and the process can be easily adapted to optimise towards different KPIs (like _net profit_, _CLV_, _number of subscriptions_, etc.)
 
 ```{r}
 # Ten Hypothetical Customers 
@@ -346,7 +346,8 @@ This would result in an additional expected profit of __nearly £1.7 per custome
 total_expected_profit_ten_cust %>% 
   slice(184, 121) %>%
   round(3) %>%
-  mutate(diff = expected_profit_total - lag(expected_profit_total))
+  mutate(diff = expected_profit_total - lag(expected_profit_total)) %>% 
+  kable()
 ```
 
 It is easy to see that, depending on the size of your business, the magnitude of potential profit increase could be a significant.
@@ -356,7 +357,7 @@ It is easy to see that, depending on the size of your business, the magnitude of
 
 In this final piece of the puzzle, I've taken my __final random forest__ model and implemented a __multi-customer profit optimization__ that revealed a potential additional expected profit of __nearly £1.7 per customer__ (or __£850k__ if you had a 500,000 customer base).
 
-Furthermore, I've introduced key concepts like the __threshold and F1 score__ and the __precision-recall tradeoff__ and explained why it's highly important to decide which cutoff to call YES.
+Furthermore, I've discussed key concepts like the __threshold and F1 score__ and the __precision-recall tradeoff__ and explained why it's highly important to decide which cutoff to adopt.
 
 After exploring, cleansing and formatting the data, fitting and comparing multiple models and choosing the best one, sticking with the default threshold @ Max F1 would be stopping short of the ultimate "so what?" that puts all that hard work into prospective. 
 

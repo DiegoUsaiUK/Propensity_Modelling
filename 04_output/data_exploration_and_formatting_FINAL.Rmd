@@ -25,8 +25,8 @@ knitr::opts_chunk$set(
   message    = FALSE,  # FALSE to avoid package loading messages
   cache      = TRUE,  # TRUE to save every single chunck to a folder
   echo       = TRUE,   # TRUE to display code in output document
-  out.width  = "100%",
-  out.height = "100%",
+  out.width  = "80%",
+  out.height = "80%",
   fig.align  = "center"
 )
 ```
@@ -54,23 +54,22 @@ source("../02_scripts/plot_ggpairs_funct.R")
 
 ## Introduction
 
-In this day and age, a business that leverages data to understand the drivers of its customers' behaviour has a true competitive advantage. Organisations can dramatically improve their performance in the market by analysing customer level data in an effective way and focus their efforts towards those that are more likely to engage. 
+In this day and age, a business that leverages data to understand the drivers of customers' behaviour has a true competitive advantage. Organisations can dramatically improve their performance in the market by analysing customer level data in an effective way and focus their efforts towards those that are more likely to engage. 
 
-One trialled and tested approach to tease out this type of insight is [__Propensity Modelling__](https://en.wikipedia.org/wiki/Predictive_modelling), which combines information such as a __customers’ demographics__ (age, race, religion, gender, family size, ethnicity, income, education level), __psycho-graphic__ (social class, lifestyle and personality characteristics), __engagement__ (emails opened, emails clicked, searches on mobile app, webpage dwell time, etc.), __user experience__ (customer service phone and email wait times, number of refunds, average shipping times), and __user behaviour__ (purchase value on different time-scales, number of days since most recent purchase, time between offer and conversion, etc.) to estimate the likelihood of a certain customer profile to performing a certain type of behaviour (e.g. the purchase of a product).
+One trialled and tested approach to tease this type of insight out of data is [__Propensity Modelling__](https://en.wikipedia.org/wiki/Predictive_modelling), which combines information such as a __customers’ demographics__ (age, race, religion, gender, family size, ethnicity, income, education level), __psycho-graphic__ (social class, lifestyle and personality characteristics), __engagement__ (emails opened, emails clicked, searches on mobile app, webpage dwell time, etc.), __user experience__ (customer service phone and email wait times, number of refunds, average shipping times), and __user behaviour__ (purchase value on different time-scales, number of days since most recent purchase, time between offer and conversion, etc.) to estimate the likelihood of a certain customer profile to performing a certain type of behaviour (e.g. the purchase of a product).
 
-Once you understand the probability of a certain customer to interact with your brand, buy a product or a sign up for a service, you can use this information to create scenarios, be it minimising __marketing expenditure__, maximising __acquisition targets__, and optimise __email send frequency__ or __depth of discount__.
+Once you understand the probability of a certain customer to interact with a brand, buy a product or a sign up for a service, you can use this information to create scenarios, be it minimising __marketing expenditure__, maximising __acquisition targets__, and optimise __email send frequency__ or __depth of discount__.
 
 
 ## Project Structure
 
-In this project I'm analysing the results of a bank __direct marketing campaign__ to sell term deposits in order to identify what type of customer is more likely to respond. The marketing campaigns were based on phone calls and more than one contact to the same client was required at times. 
+In this project I'm analysing the results of a bank __direct marketing campaign__ to sell term a deposit its existing clients in order to identify what type of characteristics make a customer more likely to respond. The marketing campaigns were based on phone calls and more than one contact to the same person was required at times. 
 
 First, I am going to carry out an __extensive data exploration__ and use the results and insights to prepare the data for analysis.
 
 Then, I'm __estimating a number of models__ and assess their performance and fit to the data using a __model-agnostic methodology__ that enables to __compare traditional "glass-box" models and "black-box" models__.
 
 Last, I'll fit __one final model__ that combines findings from the exploratory analysis and insight from models' selection and use it to __run a revenue optimisation__.
-
 
 ## The data
 
@@ -82,9 +81,9 @@ In particular, the target __subscribed__ is a __binary response variable__ indic
 
 
 
-## Loading data and initial inspection
+### Loading data and initial inspection
 
-The data I'm using ( __bank-direct-marketing.csv__) is a modified version of the full set mentioned earlier and can be found on my [__GitHub profile__](https://github.com/DiegoUsaiUK/Customer_Marketing_Engagement/tree/master/01_data). As it contains lots of double quotation marks, some manipulation is required to get into a usable format. 
+The data I'm using ( __bank-direct-marketing.csv__) is a modified version of the full set mentioned earlier and can be found on my [__GitHub profile__](https://github.com/DiegoUsaiUK/Propensity_Modelling/tree/master/01_data). As it contains lots of double quotation marks, some manipulation is required to get into a usable format. 
 
 First, I load each row into one string
 ```{r raw data}
@@ -122,7 +121,7 @@ data_clean <-
 ```
 
 
-## Initial Data Manipulation
+### Initial Data Manipulation
 
 Let's have a look! 
 
@@ -292,7 +291,6 @@ data_clean %>%
 Guided by the results of this visual correlation analysis, I will continue to explore the relationship between the target and each of the predictors in the next section. For this I will enlist the help of the brilliant __GGally__ library to visualise a modified version of the correlation matrix with `Ggpairs`, and plot `mosaic charts` with the __ggmosaic__ package, a great way to examine the relationship among two or more categorical variables.
 
 
-
 #### Target Variable
 
 First things first, the __target variable__: `subscribed` shows a __strong class imbalance__, with nearly 89% in the __No category__ to 11% in the __Yes category__.
@@ -320,13 +318,11 @@ data_clean %>%
 ```
 
 
-I will address __class imbalance__  before entering the modelling phase with a __re-sampling technique__, which aims at rebalancing the dataset by "shrinking" the prevalent class ("No" or 0). This is to ensure that the model adequately detect what variables are driving the ‘yes’ and ‘no’ responses.
-
-
+I am going to address __class imbalance__  during the modelling phase by enabling  __re-sampling__, in __h2o__. This will rebalance the dataset by "shrinking" the prevalent class ("No" or 0) and ensure that the model adequately detects what variables are driving the ‘yes’ and ‘no’ responses.
 
 #### Predictors
 
-Let's continue with some of the numerical features:
+Let's continue with __some of the numerical features__:
 
 ```{r, some continuous features}
 data_clean %>% 
@@ -340,7 +336,7 @@ __age__ 's density plots have very similar variance compared to the target varia
 
 Despite continuous in nature, __pdays__ and __previous__ are in fact categorical features and are also all strongly right skewed. For these reasons, they will need to be discretised into groups. Both variables are also moderately correlated, suggesting that they may capture the same behaviour.
 
-Next, I visualise the bank client data with the __mosaic charts__:
+Next, I visualise the __bank client data__ with the _mosaic charts_:
 
 ```{r, bank client data all}
 job <- ggplot(data = data_clean) +
@@ -395,7 +391,7 @@ In line with the _correlationfunnel_ findings, __job__, __education__, __marital
 __default__ has only 3 observations in the ‘yes’ level, which will be rolled into the least frequent level as they're not enough to make a proper inference. Level ‘unknown’ of the __housing__ and __loan__ variables have a small number of observations and will be rolled into the second smallest category. Lastly, __job__ and __education__ would also benefit from grouping up of least common levels.
 
 
-Moving on to the other campaign attributes:
+Moving on to the __other campaign attributes__:
 ```{r, other campaign attributes}
 data_clean %>% 
    select(subscribed, campaign, poutcome) %>% 
@@ -407,7 +403,7 @@ Although continuous in principal, __campaign__ is more categorical in nature and
 On the other hand, __poutcome__ is one of the attributes expected to be have a strong predictive power. The uneven distribution of levels would suggest to roll the least common occurring level (__success__ or `scs`) into another category. However, contacting a client who previously purchased a term deposit is one of the catacteristics with highest predictive power and needs to be left ungrouped. 
 
 
-Then, I'm looking at last contact information:
+Then, I'm looking at __last contact information__:
 ```{r last contact information}
 con <- ggplot(data = data_clean) +
    geom_mosaic(aes(x = product(contact, subscribed), fill = contact)) +
@@ -437,7 +433,7 @@ __contact__ and __month__ should impact the response variable as they both have 
 
 In contrast, __day_of_week__ does not appear to impact the response as there is not enough variation between the levels.
 
-Last but not least, the social and economic attributes:
+Last but not least, the __social and economic attributes__:
 ```{r, social-economic context attributes}
 data_clean %>% 
    select(subscribed, emp_var_rate, cons_price_idx, 
@@ -457,7 +453,7 @@ Following up on the findings from the Exploratory Data Analysis, I'm getting the
 
 ### Discretising of categorical predictors
 
-Here, I'm using a helper function [`plot_hist_funct`](https://github.com/DiegoUsaiUK/Customer_Marketing_Engagement/tree/master/03_scripts) to take a look at features histograms. That helps understanding how to combine least common levels into "other' category.
+Here, I'm using a helper function [`plot_hist_funct`](https://github.com/DiegoUsaiUK/Propensity_Modelling/tree/master/03_scripts) to take a look at features histograms. That helps understanding how to combine least common levels into "other' category.
 ```{r}
 data_clean %>%
     select_if(is_character) %>%
@@ -576,7 +572,7 @@ data_final %>% str()
 
 - Correlation analysis with __correlationfunnel__ helped identify a hierarchy of expected predictive power for all variables
 
-- __duration__ (eqpt_rent) has strongest correlation with target variable whereas some of the bank client data like __housing__ and __loan__ shows the weakest correlation
+- __duration__ has strongest correlation with target variable whereas some of the bank client data like __housing__ and __loan__ shows the weakest correlation
 
 - However, __duration__ will __NOT__ be used in the analysis as it is unknown before a call. As such it offers very little actionable insight or predictive value and should be discarded from any realistic predictive model
 

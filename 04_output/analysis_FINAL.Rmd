@@ -48,23 +48,22 @@ library(tictoc)
 
 ## Introduction
 
-In this day and age, a business that leverages data to understand the drivers of its customers' behaviour has a true competitive advantage. Organisations can dramatically improve their performance in the market by analysing customer level data in an effective way and focus their efforts towards those that are more likely to engage. 
+In this day and age, a business that leverages data to understand the drivers of customers' behaviour has a true competitive advantage. Organisations can dramatically improve their performance in the market by analysing customer level data in an effective way and focus their efforts towards those that are more likely to engage. 
 
-One trialled and tested approach to tease out this type of insight is [__Propensity Modelling__](https://en.wikipedia.org/wiki/Predictive_modelling), which combines information such as a __customers’ demographics__ (age, race, religion, gender, family size, ethnicity, income, education level), __psycho-graphic__ (social class, lifestyle and personality characteristics), __engagement__ (emails opened, emails clicked, searches on mobile app, webpage dwell time, etc.), __user experience__ (customer service phone and email wait times, number of refunds, average shipping times), and __user behaviour__ (purchase value on different time-scales, number of days since most recent purchase, time between offer and conversion, etc.) to estimate the likelihood of a certain customer profile to performing a certain type of behaviour (e.g. the purchase of a product).
+One trialled and tested approach to tease this type of insight out of data is [__Propensity Modelling__](https://en.wikipedia.org/wiki/Predictive_modelling), which combines information such as a __customers’ demographics__ (age, race, religion, gender, family size, ethnicity, income, education level), __psycho-graphic__ (social class, lifestyle and personality characteristics), __engagement__ (emails opened, emails clicked, searches on mobile app, webpage dwell time, etc.), __user experience__ (customer service phone and email wait times, number of refunds, average shipping times), and __user behaviour__ (purchase value on different time-scales, number of days since most recent purchase, time between offer and conversion, etc.) to estimate the likelihood of a certain customer profile to performing a certain type of behaviour (e.g. the purchase of a product).
 
-Once you understand the probability of a certain customer to interact with your brand, buy a product or a sign up for a service, you can use this information to create scenarios, be it minimising __marketing expenditure__, maximising __acquisition targets__, and optimise __email send frequency__ or __depth of discount__.
+Once you understand the probability of a certain customer to interact with a brand, buy a product or a sign up for a service, you can use this information to create scenarios, be it minimising __marketing expenditure__, maximising __acquisition targets__, and optimise __email send frequency__ or __depth of discount__.
 
 
 ## Project Structure
 
-In this project I'm analysing the results of a bank __direct marketing campaign__ to sell term deposits in order to identify what type of customer is more likely to respond. The marketing campaigns were based on phone calls and more than one contact to the same client was required at times. 
+In this project I'm analysing the results of a bank __direct marketing campaign__ to sell term a deposit its existing clients in order to identify what type of characteristics make a customer more likely to respond. The marketing campaigns were based on phone calls and more than one contact to the same person was required at times. 
 
 First, I am going to carry out an __extensive data exploration__ and use the results and insights to prepare the data for analysis.
 
 Then, I'm __estimating a number of models__ and assess their performance and fit to the data using a __model-agnostic methodology__ that enables to __compare traditional "glass-box" models and "black-box" models__.
 
 Last, I'll fit __one final model__ that combines findings from the exploratory analysis and insight from models' selection and use it to __run a revenue optimisation__.
-
 
 ## Modelling strategy
 
@@ -130,13 +129,9 @@ x <- setdiff(names(train_tbl %>% as.h2o()), y)
 
 ### Fitting the models
 
-Use the random grid to search for best hyper-parameters
+For this project I'm estimating a __Generalised Linear Model__ (a.k.a. Elastic Net), a __Random Forest__ (which __h2o__ refers to at _Distributed Random Forest_) and a __Gradient Boosting Machine__ (or GBM). 
 
-It's now time to fit some models: for this project I'm estimating a __Generalised Linear Model__ (a.k.a. Elastic Net), a __Random Forest__ (which h2o refers to at _Distributed Random Forest_) and a __Gradient Boosting Machine__ (or GBM). 
-
-Before tackling the actual model formulations, I need to set up a random grid for the `tree-based` models (DRF and GBM) to search for best hyper-parameters. To do so, I create a number of arguments for the `h2o.grid()` function.
-
-First, I define the __search parameters__ to be passed to the `hyper_params`argument:
+To implement a grid search for the `tree-based` models (DRF and GBM), I need to set up a random grid to __search for optimal hyper-parameters__ for the `h2o.grid()` function . To do so, I define the __search parameters__ to be passed to the `hyper_params`argument:
 
 * `sample_rate` is used to set the row sampling rate for each tree
 
@@ -174,7 +169,7 @@ hyper_params_gbm <-
 ```
 
 
-To help manage the models' estimation running time, I’m also defining some _control parameters_ to be passed to the `search_criteria` argument: 
+I also set up a second list for the `search_criteria` argument, which helps to manage the models' estimation running time:  
 
 * The `strategy` argument is set to __RandomDiscrete__ for the search to randomly select a combination from the grid search parameters
 
@@ -303,9 +298,9 @@ This is especially important in the event of momentary loss of web connection, w
 
 There are many libraries (like _IML_, _PDP_, _VIP_, and _DALEX_ to name but the more popular) that help with __Machine Learning Interpretability__, __feature explanation__ and __general performance assessment__ and they all have gained in popularity in recent years. 
 
-There are many methodologies to interpret machine learning results (i.e. _local interpretable model-agnostic explanations_, _partial dependence plots_, _permutation-based variable importance_) but in this project I examine the `DALEX` package, which focuses on __Model-Agnostic Interpretability__ and provides a convenient way to comparing performance across multiple models with different structures. 
+There are a number of methodologies to interpret machine learning results (i.e. _local interpretable model-agnostic explanations_, _partial dependence plots_, _permutation-based variable importance_) but in this project I examine the `DALEX` package, which focuses on __Model-Agnostic Interpretability__ and provides a convenient way to comparing performance across multiple models with different structures. 
 
-One of the key __advantages__ of the model-agnostic approach is that you can compare contributions of traditional "glass-box" models as well as black-box models on the same scale. However, being permutation-based, one of its main __drawbacks__ is that it do not deal well with large number of predictor variables and larger datasets.   
+One of the key __advantages__ of the model-agnostic approach used by `DALEX` is that you can __compare contributions__ of traditional "glass-box" models to black-box models __on the same scale__. However, being permutation-based, one of its main __drawbacks__ is that it does not scale well with large number of predictor variables and larger datasets.  
 
 
 ### The DALEX procedure
@@ -395,13 +390,12 @@ explainer_gbm <- explain(
   )
 ```
 
-At last, I'm ready to pass the __explainer objects__ to several DALEX functions that will help assess and compare the performance of the different models.
 
 ## Assessing the models 
 
-Given that performance measures may reflect a different aspect of the predictive performance of a model, it is important to evaluate and compare several metrics when appraising a model and DALEX does just that!
+At last, I'm ready to pass the __explainer objects__ to several DALEX functions that will help assess and compare the performance of the different models. Given that performance measures may reflect a different aspect of the predictive performance of a model, it is __important to evaluate and compare several metrics when appraising a model__ and DALEX does just that!
 
-To evaluate and compare my models' performance, I've drawn inspiration from the framework used by Przemyslaw Biecek and Tomasz Burzykowski in their book, [__Explanatory Model Analysis__](https://pbiecek.github.io/ema/introduction.html), which is structured around key questions:
+To evaluate and compare my models' performance, I've drawn inspiration from the framework used by _Przemyslaw Biecek_ and _Tomasz Burzykowski_ in their book, [__Explanatory Model Analysis__](https://pbiecek.github.io/ema/introduction.html), which is structured around key questions:
 
 * 1 - Are the models well fitted?
 
@@ -425,7 +419,7 @@ model_performance(explainer_drf)
 model_performance(explainer_gbm)
 ```
 
-Based on the metrics available for all models ( __accuracy__ and __AUC__), I can see that __elastic net__ and __gradient boosting__ are performing roughly in par with one another, with __random forest__ not far behind. AUC ranges between .78-.80 whereas accuracy has a slightly narrower range of .89-.90
+Based on the metrics available for all models ( __accuracy__ and __AUC__), I can see that __elastic net__ and __gradient boosting__ are performing roughly on par with one another, with __random forest__ not far behind. AUC ranges between .78-.80 whereas accuracy has a slightly narrower range of .89-.90
 
 
 #### Residual diagnostics
@@ -452,7 +446,8 @@ p2 <- plot(resids_glm, resids_drf, resids_gbm, geom = "boxplot") +
 gridExtra::grid.arrange(p2, p1, nrow = 1)
 ```
 
-The DRF and GBM models appear to perform on a par with one another, given the median absolute residuals. Looking at the residuals distribution on the right-hand side, you can see that the median residuals are the lowest for these two models, with the GLM  seeing a higher number of tail residuals. This is also mirrored by the boxplots on the left-hand side, where the tree-based models both achieve the lowest median absolute residual value. 
+The __DRF and GBM__ models appear to perform __on a par with one another__, given the median absolute residuals. Looking at the residuals distribution on the right-hand side, you can see that the median residuals are the lowest for these two models, with __the GLM seeing a higher number of tail residuals__. This is also mirrored by the boxplots on the left-hand side, where the tree-based models both achieve the lowest median absolute residual value. 
+
 
 ### 2 - How do the models compare with one another?
 
@@ -487,11 +482,11 @@ All models performs much better that random guessing and achieves a AUC of .75-.
 
 Each ML algorithm has its own way to assess the importance of each variable: linear models for instance refer to their coefficients, whereas tree-based models look at impurity, which makes it difficult to compare variable importance across models. 
 
-DALEX calculates variable importance measures via permutation, which is model agnostics, allowing for direct comparison between models of different structure. However, with variable importance scores based on permutations, we should remember that calculations slow down when the number of features increases. 
+DALEX calculates variable importance measures via permutation, which is model agnostics and allows for __direct comparison between models of different structure__. However, when variable importance scores are based on permutations, we should remember that __calculations slow down when the number of features increases__. 
 
-Once again, I'm passing the "explainer" for each single model to the `feature_importance()` function and setting `n_sample` to 8000 to use practically all available observations. Although not exorbitant, the total execution time was __nearly 30 minute__ but this is based on a relatively small dataset. But don't forget that computation speed can be increased by reducing `n_sample`, which is especially important for larger datasets.
+Once again, I'm passing the "explainer" for each single model to the `feature_importance()` function and setting `n_sample` to 8000 to use practically all available observations. Although not exorbitant, the total execution time was __nearly 30 minute__ but this is based on a relatively small dataset and number of variables. Don't forget that computation speed can be increased by reducing `n_sample`, which is especially important for larger datasets.
 
-```{r, cache=TRUE, eval=TRUE}
+```{r, eval=TRUE}
 # measure execution time
 tictoc::tic()
 
@@ -509,9 +504,9 @@ vip_gbm <- feature_importance(explainer_gbm, n_sample = 8000,
 tictoc::toc()
 ```
 
-Now I only have to pass the __vip__ objects to a plotting function: as suggested by the auto-generated x-axis label ( __Drop-out loss__), the main intuition behind how variable importance is calculated lies in how much the model fit would decrease if the contribution of a selected explanatory variable was removed. The larger the segment, the larger the loss when that variable is dropped from the model.
+Now I only have to pass the __vip__ objects to a plotting function: as suggested by the auto-generated x-axis label ( __Drop-out loss__), the main intuition behind how variable importance is calculated lies in __how much the model fit would decrease if the contribution of a selected explanatory variable was removed__. The larger the segment, the larger the loss when that variable is dropped from the model.
 
-```{r, cache=TRUE, eval=TRUE, include=T}
+```{r, eval=TRUE, include=T}
 # plotting top 10 feature only for clarity of reading
 plot(vip_glm, vip_drf, vip_gbm, max_vars = 10) +
   ggtitle("Permutation variable importance", 
@@ -607,7 +602,7 @@ In particular, my __final model__:
 
 - Excludes a number of features (`age`, `housing`, `loan`, `campaign`, `cons_price_idx`) that have low predictive power
 
-- Removes `previous`, which shows little difference between its 2 levels in the PD plot - it's also moderately correlated with `pdays`, suggesting that they may capturing the same behaviour
+- Removes `previous`, which shows little difference between its 2 levels in the PD plot - it's also moderately correlated with `pdays`, suggesting that they may  be capturing the same behaviour
 
 - Also drops `emp_var_rate` because of its strong correlation with `nr_employed` and also because conceptually they are controlling for a very similar economic behaviour
 
