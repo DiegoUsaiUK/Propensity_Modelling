@@ -26,7 +26,5 @@ You can find the final articles on [__my website__](https://diegousai.io/):
 
 * _Part 3 of 3 - Optimise Profit With the Expected Value Framework_ - [__Link__](https://diegousai.io/2020/04/propensity-modelling-3-of-3/)
 
-I've also published an abridged version of the combined articles on [__Analytics Vidhya__](https://medium.com/analytics-vidhya)
-
 
 
