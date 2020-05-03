@@ -109,7 +109,7 @@ drf_final <- h2o.loadModel(path = "../03_models/drf_grid_final_model_1")
 
 ### The threshold and the F1 score 
 
-The question the model is trying to answer is " _Has this customer signed up for a term deposit following a direct marketing campaign?_ " and the cut-off (a.k.a. the threshold) is the value that divides the predictions into `Yes` and  `No`.
+The question the model is trying to answer is " _Has this customer signed up for a term deposit following a direct marketing campaign?_ " and the cut-off (a.k.a. the threshold) is the value that divides the  model's predictions into `Yes` and  `No`.
 
 To illustrate the point, I first calculate some predictions by passing the `test_tbl` data set to the `h2o.performance` function.
 
@@ -381,7 +381,6 @@ The full R code and all relevant files can be found on my GitHub profile @ [__Pr
 * For an advanced tutorial on sales forecasting and product backorders optimisation see Matt Dancho's [__Predictive Sales Analytics: Use Machine Learning to Predict and Optimize Product Backorders__](https://www.business-science.io/business/2017/10/16/sales_backorder_prediction.html)
 
 * For the __Expected Value Framework__ see: [_Data Science for Business_](https://www.goodreads.com/book/show/17912916-data-science-for-business)
-
 
 
 
