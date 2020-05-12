@@ -1,8 +1,8 @@
 ---
 title: "Using h2o and DALEX to Estimate Likelihood to Purchase a Financial Product"
-subtitle:  "Propensity Modelling - Part 1 of 3: Data Preparation and Exploratory Data Analysis"
+subtitle:  "Propensity Modelling - Data Preparation and Exploratory Data Analysis"
 author: "Diego Usai"
-date: "14 February 2020"
+date: "14 January 2020"
 output:
   html_document:
     theme: spacelab

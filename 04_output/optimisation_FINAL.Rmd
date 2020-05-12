@@ -1,8 +1,8 @@
 ---
 title: "Using h2o and DALEX to Estimate Likelihood to Purchase a Financial Product"
-subtitle:  "Propensity Modelling - Part 3 of 3: Optimise Profit With the Expected Value Framework"
+subtitle:  "Propensity Modelling - Optimise Profit With the Expected Value Framework"
 author: "Diego Usai"
-date: "20 April 2020"
+date: "20 March 2020"
 output:
   html_document:
     theme: spacelab

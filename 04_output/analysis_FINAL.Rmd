@@ -1,8 +1,8 @@
 ---
 title: "Using h2o and DALEX to Estimate the Likelihood of Purchasing a Financial Product"
-subtitle:  "Propensity Modelling - Part 2 of 3: Estimate Several Models and Compare Their Performance Using a Model-agnostic Methodology"
+subtitle:  "Propensity Modelling - Estimate Several Models and Compare Their Performance Using a Model-agnostic Methodology"
 author: "Diego Usai"
-date: "17 March 2020"
+date: "17 February 2020"
 output:
   html_document:
     theme: spacelab
