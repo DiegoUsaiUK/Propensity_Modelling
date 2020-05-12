@@ -248,8 +248,6 @@ data_clean %>%
 ```
 
 
-
-
 Zooming in on the top 5 features we can see that certain characteristics have a greater correlation with the target variable (subscribing to the term deposit product) when: 
 
 * The `duration` of the last phone contact with the client is 319 seconds or longer
