@@ -26,7 +26,7 @@ You can find the final articles on [__my website__](https://diegousai.io/):
 
 * _Optimise Profit With the Expected Value Framework_ - [__Link__](https://diegousai.io/2020/03/propensity-modelling-profit-optimisation/)
 
-* If you cannot be bothered to read all 3 articles, you can find an abridged version here - [__Link__](https://diegousai.io/2020/05/propensity-modelling-abridged/)
+* If you cannot be bothered to read all 3 articles, you can find an __abridged version__ here - [__Link__](https://diegousai.io/2020/05/propensity-modelling-abridged/)
 
 
 
