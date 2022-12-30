@@ -1,4 +1,4 @@
-# Propensity_Modelling - Using h2o and DALEX to Estimate the Likelihood of Purchasing a Financial Product
+# Propensity Modelling - Using h2o and DALEX to Estimate the Likelihood of Purchasing a Financial Product
 
 In this day and age, a business that leverages data to understand the drivers of its customers' behaviour has a true competitive advantage. Organisations can dramatically improve their performance in the market by analysing customer level data in an effective way and focus their efforts towards those that are more likely to engage. 
 
